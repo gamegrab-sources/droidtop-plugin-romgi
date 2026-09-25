@@ -1,54 +1,165 @@
 # romgi as a droidtop plugin
 
 Private plan. Upstream: https://github.com/caprado/romgi (MIT). Owner's
-installed build: `com.bi0shacker001.romgi` (package renamed from upstream's
-`com.caprado.romgi`; `MainActivity` is unchanged, see
-`/root/coordination/romgi-integration.md`).
+installed build: `com.bi0shacker001.romgi` (see
+`/root/coordination/romgi-integration.md` for the prior JSON-integration
+groundwork, now superseded as the goal here -- the owner wants a real plugin
+built FROM romgi's own code, not a launch-the-real-app intent).
+
+**Plugin model this plan is written against (2026-09-25):** droidtop plugins
+run in **droidtop's own process/context**, never through enginehost. A
+plugin is Python, a native Kotlin/`.so` bundle (arm64-v8a + x86_64), or
+another kind droidtop's host adds support for. The sandbox exists for
+stability, not security. Root is an optional enhancement only, never
+required, never the default path.
 
 ## What it would contribute
 
-romgi is a search/download ROM manager: dio for HTTP, sqflite for a local
-scraped index (`db/romdb.db.gz`), and `lib/services/{debrid,metadata,torrent}`
-for its sources. To droidtop that maps to exactly one surface: an
-`acquire_content` action inside a system's own settings screen ("Download
-games"), which searches romgi for that system and saves straight into the
-system's real destination folder. Nothing else in droidtop's UI needs romgi —
-no status tile, no library entries (romgi's results become droidtop library
-entries only once the files land in a scanned folder, same as any other ROM).
+A search/download surface inside droidtop's own systems: search romgi's
+sources for a system, show results with progress, and save straight into
+that system's real destination folder -- plus, once that exists, a
+downloads-status tile and per-result actions (retry, cancel, pick a mirror).
+This is a strict upgrade over the earlier JSON `acquire_content` plan: that
+could only launch romgi's home screen with ignored extras; a real plugin
+lets droidtop render romgi's search results itself and drive the download
+without ever switching apps.
 
-## Reuse as a native bundle: not practical here
+## The real question: how does Dart/Flutter code become a droidtop plugin
 
-droidtop's plugin form (SPEC §12a) is a signed subplugin bundle loaded into
-*enginehost's* process — the same mechanism as engine bundles, native
-code plus manifest, no separate APK, no Python. romgi is a Flutter app: its
-UI, its state (Riverpod), and its service layer all run inside the Flutter
-engine and a Dart AOT snapshot, not as JVM/Kotlin classes or a plain `.so`.
-There's no clean way to extract `lib/services/*` into a subplugin without
-rewriting them in Kotlin/native code against enginehost's contract — which
-would mean reimplementing a ROM downloader a second time, exactly the
-duplication `docs/SPEC.md` §12a's closing paragraph already rejects for the
-scraper case ("driving the real app through a real intent is the honest
-shape").
+romgi is Flutter (Riverpod, dio, sqflite; `lib/services/{debrid,metadata,torrent}`
+plus a local scraped index in `db/`). Neither standing plugin kind (Python,
+native Kotlin/`.so`) accepts Dart source directly, so every route below
+either reuses romgi's actual code through a new mechanism or re-expresses
+its logic in another language. Weighed on effort, how well it keeps riding
+this repo's daily upstream sync, and APK size:
 
-So: **no subplugin for romgi.** The existing JSON-half plan in
-`romgi-integration.md` is the whole mechanism — an intent filter on
-`MainActivity`, extras (`system`, `systemName`, `dest`, `query`), and Dart-side
-handling of those extras to pre-select the platform and save location. That
-work is romgi-side Dart/Flutter, tracked as commits on this repo's `main`
-once picked up (not yet started — flagged as "someone who can run the app"
-work in the integration note).
+### A. Flutter module -- embed a Flutter engine in the plugin runner, reuse the Dart code behind a bridge
+
+A new plugin kind: droidtop's plugin host embeds a Flutter engine
+(`libflutter.so`, arm64-v8a + x86_64) in the plugin runner process and loads
+romgi's actual Dart code -- `lib/services/*`, `lib/models`, `lib/providers` --
+compiled to a release AOT snapshot, fronted by a thin plugin-API adapter
+package (new code, added to *this* repo, not upstream) that translates
+droidtop's plugin calls (search, download, status) into calls on romgi's
+existing Riverpod providers, and streams results back over a method channel
+instead of rendering romgi's own screens.
+
+- **Effort:** bounded and one-time. The adapter package is new glue code,
+  but everything it calls -- the catalog, search, download, sqlite index --
+  is romgi's existing, working implementation, untouched. Host-side, this is
+  real work (a new plugin kind, an engine lifecycle, a method-channel
+  bridge), but it's built once and serves any future Flutter/Dart plugin
+  too, not just this one.
+- **Upstream sync:** the best of the four routes, by a wide margin. Because
+  the reused code is still Dart, `upstream-main` -> `main` merges (the
+  workflow this repo already runs daily) keep working exactly as designed --
+  upstream commits land as real, mergeable diffs against the same files the
+  adapter calls into. A conflict only happens when upstream actually touches
+  the same lines the adapter touches, which is rare for glue code sitting
+  beside, not inside, romgi's services.
+- **APK size:** the real cost. A Flutter engine is several MB per ABI
+  (arm64-v8a + x86_64 roughly doubles that), plus the Dart AOT snapshot for
+  romgi's own code. This is paid once if the host reuses a single shared
+  engine instance for every Flutter-module plugin rather than one engine per
+  plugin -- worth stating as a requirement to the plugins agent, not an
+  afterthought.
+
+### B. Port core logic to Kotlin
+
+Rewrite `lib/services/{debrid,metadata,torrent}`, the catalog/search logic,
+and the download/ROM-management flow as Kotlin, fitting droidtop's existing
+native Kotlin/`.so` plugin kind -- no new host capability needed.
+
+- **Effort:** high and, worse, recurring. This is a full reimplementation of
+  romgi's actual logic (HTTP clients, parsers, the download state machine,
+  the local index) in a different language and typically a different
+  HTTP/DB stack (OkHttp vs dio, Room/SQLite driver vs sqflite).
+- **Upstream sync:** this is where the route loses. Once ported, the code is
+  structurally unrelated to upstream Dart source -- the daily
+  `upstream-main` -> `main` merge still succeeds mechanically (it's merging
+  Dart files nobody edits on the `main` side), but it stops doing anything
+  useful for the plugin itself: every upstream behavior change has to be
+  noticed and re-translated by hand, forever. That's a permanent tax working
+  directly against the reason this repo has an auto-sync workflow at all.
+- **APK size:** best of the four -- plain native code, no extra runtime.
+
+### C. Python port
+
+Same shape as B -- reimplement the same logic in Python instead of Kotlin,
+fitting droidtop's Python plugin kind.
+
+- **Effort:** likely somewhat lower than a Kotlin port (Python's more
+  permissive for scraping/parsing code, `httpx`/`requests` and `sqlite3` are
+  close analogues of dio/sqflite), but it's still a full translation, not a
+  reuse.
+- **Upstream sync:** the same permanent problem as B -- a translated
+  implementation drifts from upstream Dart source immediately and needs
+  hand re-porting for every meaningful upstream change.
+- **APK size:** good, if droidtop already ships one shared Python
+  interpreter for its Python-kind plugins generally -- the marginal cost of
+  one more Python plugin is then small. Worse than B only if no shared
+  interpreter exists yet and this is the one paying to bootstrap it.
+
+### D. Other routes considered and set aside
+
+- **Dart AOT compiled to a bare native library**, called from Kotlin without
+  a full Flutter engine (`dart compile` producing something FFI-callable, or
+  a minimal Dart standalone runtime). Would avoid the Flutter-engine size
+  cost of route A while keeping route A's upstream-sync advantage. Set
+  aside for now because it depends on romgi's actual dependencies (dio,
+  sqflite, the platform channels its `pigeons/` already generate for
+  seven-zip/torrent native calls) all working outside a Flutter engine,
+  which is not a given -- `sqflite` and the torrent/seven-zip pigeon bridges
+  are plausibly Flutter-plugin-shaped themselves. Worth a spike if route A's
+  size cost turns out to matter in practice, not a starting recommendation.
+- **Keep the JSON `acquire_content` intent plan** from
+  `romgi-integration.md` as a fallback. Still the right *baseline* -- it
+  needs far less work and remains valuable as a "romgi isn't installed as a
+  plugin yet" degrade path -- but it's explicitly not the goal here, since
+  the owner wants a real plugin built from romgi's code.
+
+## Recommendation: A, the Flutter module
+
+Upstream-sync friendliness is not a nice-to-have for this repo -- the whole
+point of the `upstream-main`/daily-merge machinery this fork was built with
+is to keep absorbing caprado/romgi's changes with minimal manual work.
+Routes B and C both throw that away permanently the moment the port lands:
+a rewritten implementation can never again receive an upstream diff as
+anything but noise on files `main` no longer really depends on. Route A is
+the only one where the sync keeps doing real work indefinitely, and it's
+also the only one that doesn't require re-implementing (and therefore
+re-testing, re-debugging) romgi's actual download/search logic a second
+time -- directly in line with this project's "one mechanism per job, don't
+duplicate a working app" rule already applied to the scraper case in
+`docs/SPEC.md`. The APK-size cost is real but bounded and shared across any
+future Flutter/Dart plugin, unlike B/C's cost, which is unbounded and paid
+forever in engineering time.
+
+**Recommended: route A.** Build the plugin-API adapter package in this
+repo's `lib/` (or a sibling package under it), calling romgi's existing
+providers/services directly; ask the plugins agent for the "Flutter module"
+plugin kind described below.
 
 ## Root
 
-Not needed. romgi already declares `MANAGE_EXTERNAL_STORAGE` and writes
-under its own UID to `/storage/.../Roms/<system>` with no root and no URI
-handover. Root offers nothing new here.
+Not needed for any route. romgi already writes to its destination folder
+under its own permissions (`MANAGE_EXTERNAL_STORAGE`); nothing in the search
+or download path benefits from root, matching the optional-enhancement-only
+rule.
 
 ## What it needs from droidtop's plugin API
 
-Nothing from the *plugin* (subplugin) surface — romgi never becomes a
-subplugin. From the JSON half, which already exists (SPEC §12), it needs
-only what `romgi-integration.md` already specifies: the `acquire_content`
-capability with `{system.id}`, `{system.name}`, `{system.folder}`
-placeholders, already implemented on droidtop's side. The remaining work is
-entirely in this fork: the intent filter and the Dart-side extras handling.
+- **A new "Flutter module" plugin kind**, if route A is picked: an embedded
+  Flutter engine (arm64-v8a + x86_64) in the plugin runner process, ideally
+  one shared engine instance serving every Flutter-module plugin rather than
+  one per plugin, and a method-channel-shaped call/response + streaming
+  bridge (for search results and download progress) analogous to whatever
+  request/response shape the Kotlin and Python plugin kinds already use.
+- **Scoped file access**, not a bare filesystem handle -- the plugin needs to
+  write into one system's real destination folder, the same shape droidtop
+  already hands ROM launches (a tree URI / scoped grant), not open access to
+  storage.
+- Beyond that, nothing romgi-specific: once a plugin can register search
+  results and a download-progress stream, romgi's own UI patterns (source
+  picker, per-result actions) map onto droidtop's existing row/action/status
+  conventions with no new capability needed.

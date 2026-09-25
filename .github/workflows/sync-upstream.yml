@@ -1,0 +1,56 @@
+name: Sync upstream
+
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "bi0shacker001"
+          git config user.email "bioshacker001@gmail.com"
+
+      - name: Add upstream remote
+        run: git remote add upstream https://github.com/caprado/romgi.git || git remote set-url upstream __UPSTREAM_URL__
+
+      - name: Fetch upstream
+        run: git fetch upstream main
+
+      - name: Fast-forward upstream-main
+        run: |
+          git checkout upstream-main
+          git merge --ff-only upstream/main
+          git push origin upstream-main
+
+      - name: Try merging into main
+        id: merge
+        run: |
+          git checkout main
+          if git merge --no-edit upstream-main; then
+            git push origin main
+          else
+            git merge --abort
+            echo "conflict=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open issue on conflict
+        if: steps.merge.outputs.conflict == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --title "Upstream sync conflict $(date -u +%Y-%m-%d)" \
+            --body "Fetching upstream and merging upstream-main into main produced a conflict. Nothing was force-pushed. Resolve manually: git fetch origin && git checkout main && git merge upstream-main, fix conflicts, commit, push."

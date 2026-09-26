@@ -11,7 +11,17 @@ typedef NotificationTapCallback = void Function(String? payload);
 class NotificationService with WidgetsBindingObserver {
   static final NotificationService _instance = NotificationService._internal();
   factory NotificationService() => _instance;
-  NotificationService._internal();
+
+  /// A no-op instance for a headless embedding that already has its own
+  /// status surface (droidtop's flutter_embed plugin host) and must never
+  /// show a second, competing Android notification. NOT the shared
+  /// singleton `NotificationService()` returns above -- every caller that
+  /// wants the real, user-visible notifications keeps using that factory,
+  /// unaffected by this one existing.
+  factory NotificationService.silent() => NotificationService._internal(silent: true);
+  NotificationService._internal({bool silent = false}) : _silent = silent;
+
+  final bool _silent;
 
   final FlutterLocalNotificationsPlugin _notifications =
       FlutterLocalNotificationsPlugin();
@@ -31,7 +41,7 @@ class NotificationService with WidgetsBindingObserver {
   bool _isAppInForeground = true;
 
   Future<void> initialize() async {
-    if (_initialized) return;
+    if (_silent || _initialized) return;
 
     // Register as lifecycle observer to track foreground/background state
     WidgetsBinding.instance.addObserver(this);
@@ -108,6 +118,7 @@ class NotificationService with WidgetsBindingObserver {
   }
 
   Future<bool> requestPermissions() async {
+    if (_silent) return false;
     if (io.Platform.isAndroid) {
       final androidPlugin = _notifications
           .resolvePlatformSpecificImplementation<
@@ -138,6 +149,7 @@ class NotificationService with WidgetsBindingObserver {
     required double progress,
     required String progressText,
   }) async {
+    if (_silent) return;
     final androidDetails = AndroidNotificationDetails(
       _downloadChannelId,
       _downloadChannelName,
@@ -165,6 +177,7 @@ class NotificationService with WidgetsBindingObserver {
   }
 
   Future<void> showExtracting({required String title}) async {
+    if (_silent) return;
     final androidDetails = AndroidNotificationDetails(
       _downloadChannelId,
       _downloadChannelName,
@@ -194,6 +207,7 @@ class NotificationService with WidgetsBindingObserver {
     required String title,
     required String platform,
   }) async {
+    if (_silent) return;
     await cancelProgressNotification();
 
     if (_isAppInForeground) return;
@@ -257,6 +271,7 @@ class NotificationService with WidgetsBindingObserver {
     required String title,
     String? error,
   }) async {
+    if (_silent) return;
     await cancelProgressNotification();
 
     if (_isAppInForeground) return;
@@ -284,10 +299,12 @@ class NotificationService with WidgetsBindingObserver {
   }
 
   Future<void> cancelProgressNotification() async {
+    if (_silent) return;
     await _notifications.cancel(_progressNotificationId);
   }
 
   Future<void> cancelAll() async {
+    if (_silent) return;
     await _notifications.cancelAll();
   }
 

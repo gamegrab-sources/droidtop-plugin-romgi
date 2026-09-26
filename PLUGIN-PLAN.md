@@ -250,3 +250,56 @@ for a real romgi plugin exists; the `upstream-main` -> `main` merge above
 is still pending. This addendum is the concrete map for that work, grounded
 in flutter_embed actually existing now -- not a restatement of the
 four-routes analysis above, which stands unchanged.
+
+## Built and rig-verified, 2026-09-26 (agent romgiplugin)
+
+The plugin-core wrapper is real and installed on the rig. Branch model:
+- `upstream-<line>` mirrors the owner's fork (bi0shacker001/romgi) main
+  plus its 5 feature branches, 1:1.
+- `plugin-core` (based on the common ancestor of every upstream line, not
+  any one line's tip, so merging it never drags one line's own content
+  into another) holds only: `lib/droidtop_plugin_main.dart` (new file;
+  calls RomDatabaseService.search and DownloadService.addDownload/
+  downloadStream/cancelDownload unmodified, per the integration surface
+  this file already mapped out), an additive
+  `NotificationService.silent()` factory, and
+  `droidtop_plugin/{build.sh,sign.sh,manifest.template.json,README.md}`
+  plus one extra CI job in pr-checks.yml (guarded on
+  droidtop_plugin/build.sh existing, so it's a no-op on the mirrored
+  upstream branches) -- the fork's own CI is untouched.
+- `plugin/<line>` is each upstream line with plugin-core merged in; the
+  plugin id (`droidtop.romgi-<line>`) and label are derived from the
+  branch name at build time, so no per-line source/manifest edits are
+  ever needed.
+
+Capabilities: `acquire_content` only. `invoke(action=search)` (bounded,
+fits the 15s watchdog -- it's a local sqlite index, not a network call).
+`startJob(action=download)` for the real download with progress
+(required droidtop's own `flutter_embed` kind to gain `startJob` support
+at all -- built the same day, see droidtop's own docs/SPEC.md 12a). The
+destination folder is a `StorageService` subclass overriding just
+`getPlatformDirectory`.
+
+**Rig-verified on BlueStacks:** installed plugin/main's signed bundle,
+approved it, and it shows "Running - droidtop - Get content" with no
+crash -- confirms the Dart entrypoint, romgi's own dependencies, and the
+FlutterEngine construction all work inside `:pluginhost` for this real
+app, not just droidtop's own trivial sample. Two install-time bugs found
+and fixed on the rig, both in plugin-core (not droidtop itself):
+1. Manifest `origin` must be `"droidtop"` -- the only origin whose public
+   key is pinned on-device, matching the key `sign.sh` actually signs
+   with (droidtop-dev's own `droidtop-origin-private.pem`). This repo's
+   own account name (`bi0shacker001`) is not a droidtop plugin origin.
+2. The plugin id must be namespaced `<origin>.<name>` --
+   `droidtop.romgi-<line>`, not `bi0shacker001.romgi-<line>`.
+
+**Not yet exercised on the rig:** the actual `search`/`download` calls --
+droidtop's Settings UI only builds a generic "Call ... status tile" debug
+row for `status_tile`-capability plugins; there is no equivalent generic
+trigger for `acquire_content` yet (droidtop-side work, not a bug in this
+wrapper). `romgi (main)` loading and staying "Running" is the strongest
+signal available without that UI existing yet -- a full search test needs
+either a debug invoke surface added to droidtop's Settings screen (a
+generic, non-romgi-specific addition) or the real future UI (search
+input, results list) PLUGIN-PLAN.md's own capability section already
+anticipates.

@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/download_service.dart' show VitaDownloadMode;
+
+export '../services/download_service.dart' show VitaDownloadMode;
+
 enum AppThemeMode { system, light, dark }
 
 class SettingsState {
@@ -17,6 +21,7 @@ class SettingsState {
   final bool debridEnabled;
   final String debridProviderId;
   final bool metadataEnabled;
+  final VitaDownloadMode vitaDownloadMode;
   final bool isLoading;
 
   const SettingsState({
@@ -32,6 +37,7 @@ class SettingsState {
     this.debridEnabled = false,
     this.debridProviderId = 'torbox',
     this.metadataEnabled = true,
+    this.vitaDownloadMode = VitaDownloadMode.pkgOnly,
     this.isLoading = false,
   });
 
@@ -54,6 +60,7 @@ class SettingsState {
     bool? debridEnabled,
     String? debridProviderId,
     bool? metadataEnabled,
+    VitaDownloadMode? vitaDownloadMode,
     bool? isLoading,
   }) {
     return SettingsState(
@@ -73,6 +80,7 @@ class SettingsState {
       debridEnabled: debridEnabled ?? this.debridEnabled,
       debridProviderId: debridProviderId ?? this.debridProviderId,
       metadataEnabled: metadataEnabled ?? this.metadataEnabled,
+      vitaDownloadMode: vitaDownloadMode ?? this.vitaDownloadMode,
       isLoading: isLoading ?? this.isLoading,
     );
   }
@@ -107,6 +115,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
   static const String _keyDebridEnabled = 'debrid_enabled';
   static const String _keyDebridProviderId = 'debrid_provider_id';
   static const String _keyMetadataEnabled = 'metadata_enabled';
+  static const String _keyVitaDownloadMode = 'vita_download_mode';
 
   SettingsNotifier() : super(const SettingsState()) {
     _loadSettings();
@@ -138,6 +147,9 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     final debridProviderId =
         prefs.getString(_keyDebridProviderId) ?? 'torbox';
     final metadataEnabled = prefs.getBool(_keyMetadataEnabled) ?? true;
+    final vitaDownloadModeIndex = prefs.getInt(_keyVitaDownloadMode) ?? 0;
+    final vitaDownloadMode = VitaDownloadMode.values[vitaDownloadModeIndex.clamp(
+        0, VitaDownloadMode.values.length - 1)];
 
     // Load platform-specific paths
     final platformPaths = <String, String>{};
@@ -166,6 +178,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       debridEnabled: debridEnabled,
       debridProviderId: debridProviderId,
       metadataEnabled: metadataEnabled,
+      vitaDownloadMode: vitaDownloadMode,
       isLoading: false,
     );
   }
@@ -261,6 +274,12 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     state = state.copyWith(metadataEnabled: value);
   }
 
+  Future<void> setVitaDownloadMode(VitaDownloadMode mode) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_keyVitaDownloadMode, mode.index);
+    state = state.copyWith(vitaDownloadMode: mode);
+  }
+
   Future<void> setMaxConcurrentDownloads(int value) async {
     final clamped = value.clamp(0, 10);
     final prefs = await SharedPreferences.getInstance();
@@ -280,6 +299,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     await prefs.remove(_keyDebridEnabled);
     await prefs.remove(_keyDebridProviderId);
     await prefs.remove(_keyMetadataEnabled);
+    await prefs.remove(_keyVitaDownloadMode);
 
     for (final key in prefs.getKeys().toList()) {
       if (key.startsWith(_keyPlatformPaths) ||

@@ -188,74 +188,114 @@ class SettingsScreen extends ConsumerWidget {
                         final customPath = settings.platformPaths[platform.id];
                         final extractEnabled =
                             settings.shouldExtractForPlatform(platform.id);
-                        return ListTile(
-                          leading: const Icon(Icons.folder_outlined),
-                          title: Text(
-                            PlatformNames.getDisplayName(platform.id),
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                customPath ?? 'Using default',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            ListTile(
+                              leading: const Icon(Icons.folder_outlined),
+                              title: Text(
+                                PlatformNames.getDisplayName(platform.id),
                               ),
-                              const SizedBox(height: 4),
-                              Row(
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  SizedBox(
-                                    height: 24,
-                                    width: 36,
-                                    child: FittedBox(
-                                      child: Switch(
-                                        value: extractEnabled,
-                                        onChanged: settings.autoExtractDisabled
-                                            ? null
-                                            : (value) {
-                                                ref
-                                                    .read(settingsProvider
-                                                        .notifier)
-                                                    .setPlatformExtractDisabled(
-                                                        platform.id, !value);
-                                              },
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
                                   Text(
-                                    'Auto-extract',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodySmall
-                                        ?.copyWith(
-                                          color: settings.autoExtractDisabled
-                                              ? Colors.grey
-                                              : null,
+                                    customPath ?? 'Using default',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      SizedBox(
+                                        height: 24,
+                                        width: 36,
+                                        child: FittedBox(
+                                          child: Switch(
+                                            value: extractEnabled,
+                                            onChanged: settings
+                                                    .autoExtractDisabled
+                                                ? null
+                                                : (value) {
+                                                    ref
+                                                        .read(settingsProvider
+                                                            .notifier)
+                                                        .setPlatformExtractDisabled(
+                                                            platform.id,
+                                                            !value);
+                                                  },
+                                          ),
                                         ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'Auto-extract',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: settings
+                                                      .autoExtractDisabled
+                                                  ? Colors.grey
+                                                  : null,
+                                            ),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
-                            ],
-                          ),
-                          trailing: customPath != null
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear),
-                                  onPressed: () {
-                                    ref
-                                        .read(settingsProvider.notifier)
-                                        .setPlatformPath(platform.id, null);
-                                    storage.setPlatformPath(platform.id, null);
-                                  },
-                                )
-                              : const Icon(Icons.chevron_right),
-                          isThreeLine: true,
-                          onTap: () => _pickFolder(
-                            context,
-                            ref,
-                            storage,
-                            platformId: platform.id,
-                          ),
+                              trailing: customPath != null
+                                  ? IconButton(
+                                      icon: const Icon(Icons.clear),
+                                      onPressed: () {
+                                        ref
+                                            .read(settingsProvider.notifier)
+                                            .setPlatformPath(
+                                                platform.id, null);
+                                        storage.setPlatformPath(
+                                            platform.id, null);
+                                      },
+                                    )
+                                  : const Icon(Icons.chevron_right),
+                              onTap: () => _pickFolder(
+                                context,
+                                ref,
+                                storage,
+                                platformId: platform.id,
+                              ),
+                            ),
+                            // A separate ListTile, not nested inside the one
+                            // above's subtitle — that ListTile already owns
+                            // the whole row's tap area (for _pickFolder), so
+                            // a nested InkWell there loses the gesture arena
+                            // and is never actually selectable.
+                            if (platform.id == 'psv')
+                              ListTile(
+                                dense: true,
+                                contentPadding: const EdgeInsets.only(
+                                  left: 72,
+                                  right: 16,
+                                ),
+                                leading: Icon(
+                                  Icons.videogame_asset,
+                                  size: 20,
+                                  color: Theme.of(context).colorScheme.outline,
+                                ),
+                                title: Text(
+                                  'Downloads: ${_getVitaModeName(settings.vitaDownloadMode)}',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                                trailing: const Icon(
+                                  Icons.chevron_right,
+                                  size: 20,
+                                ),
+                                onTap: () => _showVitaModePicker(
+                                  context,
+                                  ref,
+                                  settings.vitaDownloadMode,
+                                ),
+                              ),
+                          ],
                         );
                       }).toList(),
                     );
@@ -390,6 +430,65 @@ class SettingsScreen extends ConsumerWidget {
       case AppThemeMode.dark:
         return 'Dark';
     }
+  }
+
+  String _getVitaModeName(VitaDownloadMode mode) {
+    switch (mode) {
+      case VitaDownloadMode.pkgOnly:
+        return 'PKG only';
+      case VitaDownloadMode.pkgWithLicense:
+        return 'PKG + license';
+      case VitaDownloadMode.decryptToZip:
+        return 'Decrypt to zip';
+    }
+  }
+
+  String _getVitaModeDescription(VitaDownloadMode mode) {
+    switch (mode) {
+      case VitaDownloadMode.pkgOnly:
+        return 'Download the pkg as-is';
+      case VitaDownloadMode.pkgWithLicense:
+        return 'Also fetch the license and save it next to the pkg '
+            '(same name, .rif) — ready for Vita3K to import';
+      case VitaDownloadMode.decryptToZip:
+        return 'Fetch the license and decrypt the pkg to an install-ready '
+            'zip using the bundled pkg2zip';
+    }
+  }
+
+  void _showVitaModePicker(
+    BuildContext context,
+    WidgetRef ref,
+    VitaDownloadMode currentMode,
+  ) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Vita Downloads'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: VitaDownloadMode.values.map((mode) {
+            final isSelected = mode == currentMode;
+            return ListTile(
+              leading: Icon(
+                isSelected
+                    ? Icons.radio_button_checked
+                    : Icons.radio_button_unchecked,
+                color: isSelected
+                    ? Theme.of(dialogContext).colorScheme.primary
+                    : null,
+              ),
+              title: Text(_getVitaModeName(mode)),
+              subtitle: Text(_getVitaModeDescription(mode)),
+              onTap: () {
+                ref.read(settingsProvider.notifier).setVitaDownloadMode(mode);
+                Navigator.pop(dialogContext);
+              },
+            );
+          }).toList(),
+        ),
+      ),
+    );
   }
 
   void _showThemePicker(

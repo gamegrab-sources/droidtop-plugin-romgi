@@ -58,6 +58,14 @@ class MainActivity : FlutterActivity() {
                     } catch (t: Throwable) {
                         result.error("OPEN_FAILED", t.message, null)
                     }
+                } else if (call.method == "getNativeLibraryDir") {
+                    // pkg2zip is bundled as jniLibs/<abi>/libpkg2zip.so (a real
+                    // executable, not a loadable native library) so Android's APK
+                    // packaging places it here; Dart invokes it directly as a
+                    // subprocess rather than through JNI. See
+                    // src/main/cpp/CMakeLists.txt and
+                    // lib/services/vita_decrypt_service.dart.
+                    result.success(applicationInfo.nativeLibraryDir)
                 } else if (call.method == "getWebViewCookies") {
                     val url = call.argument<String>("url")
                     if (url == null) {

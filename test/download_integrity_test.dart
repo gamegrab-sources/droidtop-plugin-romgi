@@ -175,7 +175,11 @@ DownloadTask _task(String id, DownloadLink link,
     DownloadTask(
       id: id,
       slug: id,
-      title: id,
+      // DownloadService now saves files under the task's title (sanitized)
+      // rather than the source's raw filename — use the filename's own
+      // basename here so these fixtures still resolve to the same on-disk
+      // path the tests set up/assert against.
+      title: p.basenameWithoutExtension(link.filename),
       platform: 'psx',
       link: link,
       status: status,

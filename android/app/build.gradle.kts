@@ -5,6 +5,41 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// This is bi0shacker001's personal fork of caprado/romgi, maintained on
+// feature branches that patch/extend the upstream app. Every build uses a
+// bi0shacker001-scoped package id and "romgi-bio" label (distinct from
+// upstream's com.caprado.romgi / "romgi") so it installs alongside the
+// original app instead of overwriting it; non-main branches additionally
+// get a branch-specific suffix so branch builds can coexist with each
+// other and with main too. Branch name comes from CI (GITHUB_HEAD_REF for
+// pull_request events, GITHUB_REF_NAME for push events); local/non-CI
+// builds see neither and resolve to the plain main identity.
+val ciBranch = (System.getenv("GITHUB_HEAD_REF")?.takeIf { it.isNotEmpty() }
+    ?: System.getenv("GITHUB_REF_NAME"))
+    ?.takeIf { it != "main" }
+val branchSlug = ciBranch
+    ?.replace(Regex("[^a-zA-Z0-9]+"), "_")
+    ?.lowercase()
+    ?.let { if (it.firstOrNull()?.isDigit() == true) "b_$it" else it }
+
+val isFeatureBranch = branchSlug != null
+
+// Feature-branch builds are rolling releases — every push replaces the
+// previous one under the same tag without pubspec.yaml's version ever
+// changing, so every build on a branch would otherwise report the exact
+// same version with no way to tell which one is actually installed.
+// revision.txt holds a plain integer, bumped by CI (see the "Bump build
+// revision" step in pr-checks.yml) on every push to a feature branch, and
+// stamped onto versionName below as "-rN". It's reset to a fresh count
+// whenever a new feature branch is cut from main — main itself never
+// reads it (isFeatureBranch is false there), so it doesn't need the file.
+val revisionFile = file("revision.txt")
+val buildRevision = if (isFeatureBranch && revisionFile.exists()) {
+    revisionFile.readText().trim().toIntOrNull()
+} else {
+    null
+}
+
 android {
     namespace = "com.caprado.romgi"
     compileSdk = flutter.compileSdkVersion
@@ -22,12 +57,53 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.caprado.romgi"
+        applicationId = if (branchSlug != null) {
+            "com.bi0shacker001.romgi.branch.$branchSlug"
+        } else {
+            "com.bi0shacker001.romgi"
+        }
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
-        versionName = flutter.versionName
+        versionName = if (buildRevision != null) {
+            "${flutter.versionName}-r$buildRevision"
+        } else {
+            flutter.versionName
+        }
         multiDexEnabled = true
+
+        manifestPlaceholders["appLabel"] =
+            if (ciBranch != null) "romgi-bio ($ciBranch)" else "romgi-bio"
+
+        // Builds pkg2zip (vendored at src/main/cpp/pkg2zip) into
+        // src/main/jniLibs/<abi>/libpkg2zip.so — see src/main/cpp/CMakeLists.txt.
+        externalNativeBuild {
+            cmake {
+                targets += "pkg2zip_bin"
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+
+    signingConfigs {
+        getByName("debug") {
+            // Fixed keystore committed to the repo (not a secret — it's the
+            // conventional Android debug key). Without this, "debug" falls
+            // back to AGP's implicit ~/.android/debug.keystore, which
+            // GitHub Actions' ephemeral runners regenerate from scratch on
+            // every run — signing each release build with a different key
+            // and forcing an uninstall/reinstall on every update.
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {

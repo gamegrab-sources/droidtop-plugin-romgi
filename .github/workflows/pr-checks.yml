@@ -72,6 +72,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # This job builds BOTH debug and release APKs from a cold Gradle/
+      # Flutter cache on any repo that hasn't warmed one up yet (a fresh
+      # fork's own runner cache is separate from the origin repo's) --
+      # confirmed the hard way: it failed with "No space left on device"
+      # on every single run of a mirror of this repo, while the same
+      # commit built fine here, where months of runs keep the Gradle
+      # cache warm. A cold run downloads and unpacks the full Gradle
+      # dependency graph and Android SDK components on top of whatever
+      # the runner image ships with -- removing large preinstalled
+      # toolchains this build never touches (dotnet, GHC/Haskell,
+      # CodeQL, and cached Docker images) buys back real room without
+      # touching anything Android/NDK-related the pkg2zip native build
+      # actually needs.
+      - name: Free disk space
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force || true
+          df -h /
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:

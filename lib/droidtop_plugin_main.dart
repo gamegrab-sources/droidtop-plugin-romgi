@@ -165,7 +165,7 @@ Future<String> _handleInvoke(MethodCall call) async {
     }
     final args = (payload['args'] as Map<String, dynamic>?) ?? const {};
     final action = args['action'] as String?;
-    if (action == 'search') return _search(args);
+    if (action == 'search') return await _search(args);
     return jsonEncode({'ok': false, 'error': 'acquire_content invoke only supports action=search (use startJob for action=download)'});
   } catch (e) {
     return jsonEncode({'ok': false, 'error': e.toString()});

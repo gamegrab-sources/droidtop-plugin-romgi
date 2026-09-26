@@ -160,3 +160,49 @@ jobs:
           files: |
             romgi-${{ steps.meta.outputs.safe_branch }}-debug.apk
             romgi-${{ steps.meta.outputs.safe_branch }}-release.apk
+
+  droidtop-plugin-bundle:
+    # Builds this branch's droidtop flutter_embed plugin bundle
+    # (droidtop_plugin/, unmodified upstream repo otherwise -- see
+    # droidtop_plugin/README.md) alongside this repo's own existing
+    # checks, unsigned. Only runs where droidtop_plugin/build.sh exists
+    # (plugin-core and every plugin/<line> branch) so this job is a no-op
+    # everywhere else, including the mirrored upstream branches this
+    # repo's own sync workflow tracks.
+    name: droidtop plugin bundle (unsigned)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check this branch carries the plugin-core wrapper
+        id: has_wrapper
+        run: |
+          if [ -f droidtop_plugin/build.sh ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install the pinned Flutter SDK
+        if: steps.has_wrapper.outputs.present == 'true'
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/flutter.tar.xz" https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.47.5-stable.tar.xz
+          echo "2132e990f236f8d22e7c6314b29a191a95b10d7cbcfec9b4e2e303d996652cbb  $RUNNER_TEMP/flutter.tar.xz" | sha256sum -c -
+          tar -C "$RUNNER_TEMP" -xf "$RUNNER_TEMP/flutter.tar.xz"
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+
+      - name: Build the plugin bundle (unsigned)
+        if: steps.has_wrapper.outputs.present == 'true'
+        run: |
+          flutter config --no-analytics >/dev/null
+          ./droidtop_plugin/build.sh
+
+      - name: Upload unsigned plugin payload
+        if: steps.has_wrapper.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: droidtop-plugin-bundle-${{ github.ref_name }}
+          path: |
+            droidtop_plugin/build/manifest.json
+            droidtop_plugin/build/payload
+          retention-days: 14

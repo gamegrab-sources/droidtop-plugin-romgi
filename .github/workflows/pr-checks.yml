@@ -182,6 +182,9 @@ jobs:
           else
             echo "present=false" >> "$GITHUB_OUTPUT"
           fi
+          # Artifact names can't contain "/", and branch names here always
+          # do (plugin/<line>).
+          echo "safe_branch=${GITHUB_REF_NAME//\//-}" >> "$GITHUB_OUTPUT"
 
       - name: Install the pinned Flutter SDK
         if: steps.has_wrapper.outputs.present == 'true'
@@ -201,7 +204,7 @@ jobs:
         if: steps.has_wrapper.outputs.present == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: droidtop-plugin-bundle-${{ github.ref_name }}
+          name: droidtop-plugin-bundle-${{ steps.has_wrapper.outputs.safe_branch }}
           path: |
             droidtop_plugin/build/manifest.json
             droidtop_plugin/build/payload

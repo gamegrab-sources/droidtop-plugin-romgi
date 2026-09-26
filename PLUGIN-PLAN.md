@@ -163,3 +163,90 @@ rule.
   results and a download-progress stream, romgi's own UI patterns (source
   picker, per-result actions) map onto droidtop's existing row/action/status
   conventions with no new capability needed.
+
+## Status update, 2026-09-26 (agent flutterkind)
+
+**Route A is no longer hypothetical.** droidtop's `flutter_embed` plugin
+kind is built (droidtop commits `63627015`, `77bb12a4`, `450b96c7` on
+`main`): `FlutterRuntimeManager` downloads and verifies the shared
+`libflutter.so` runtime; `FlutterDroidtopPlugin` hosts a real
+`FlutterEngine` in `:pluginhost` per plugin, bridging droidtop's
+`invoke`/`startJob` calls to Dart over one `MethodChannel`
+(`dev.droidtop.pluginhost/<pluginId>`) carrying `{"capability", "args"}` in
+and `{"ok", "values"|"error"}` back out, JSON-encoded strings both ways. A
+sample (`droidtop/samples/plugin-sample-flutter-statustile`) builds,
+signs and installs end to end; the one open item is confirming
+`flutter_assets` loads correctly from outside the APK on a real device
+(`dq-flutterembed-01`, queued) -- see droidtop's own `docs/SPEC.md` 12a for
+the full citation trail. **One shared engine instance across plugins was
+NOT built** -- each `flutter_embed` plugin gets its own `FlutterEngine`;
+only the `libflutter.so` download itself is shared process-wide. That is
+enough to satisfy the "don't pay the runtime-download cost per plugin"
+concern this plan raised, but not literally "one engine, N plugins."
+
+**Also done 2026-09-26:** this repo's `upstream-main` now tracks the
+owner's own fork, `github.com/bi0shacker001/romgi` `main` -- not
+`caprado/romgi` directly. Only that fork's `main` is mirrored; no upstream
+feature branches. `sync-upstream.yml` and this README's own footer were
+updated to match, and `upstream-main` was reset to the fork's tip and
+pushed. **The corresponding `upstream-main` -> `main` merge did NOT land**
+in this pass: it has real new content (PSVita `pkg2zip`/`zrif` support
+among it) and one real conflict, `.github/workflows/pr-checks.yml`,
+that this agent's own tooling permissions blocked resolving mid-session
+(two separate denials reading/editing that one file while a merge was in
+progress -- not a romgi-specific problem, a session/tooling one). `main`
+currently has this plan's own re-pointing commit
+(`a88a2fa5`) but not yet the fork's newer Dart changes. **Next actual step
+for whoever picks this up:** `git fetch && git checkout main && git merge
+upstream-main`, resolve the one conflict in `pr-checks.yml` (pick the
+fork's CI shape, since upstream is now that fork, not caprado's), commit,
+push -- ordinary, no force needed.
+
+**Concrete integration surface for the plugin-API adapter (real, read
+from this repo's own `lib/services/` on `main` as of the pre-merge state
+above -- names may shift slightly once the pending merge above lands, but
+the shape won't):**
+
+- **Search** -- `RomDatabaseService.search({String? query, List<String>?
+  platforms, List<String>? regions, bool retroAchievementsOnly, int page,
+  int maxResults}) -> Future<SearchResult>` (`lib/services/rom_database_service.dart:339`).
+  Maps directly onto `PluginCapability.ACQUIRE_CONTENT`'s query half, and
+  onto `METADATA_SOURCE` if droidtop wants romgi as a scrape source too.
+- **Download** -- `DownloadService.addDownload({...}) ->
+  Future<(AddDownloadResult, DownloadTask)>` plus the broadcast
+  `Stream<DownloadTask> downloadStream` (`lib/services/download_service.dart:46`,
+  `:199`). This is the real long-running-job shape --
+  `DroidtopPlugin.startJob`/`PluginJobProgress.report` should subscribe to
+  `downloadStream`, filter by task id, and call `progress.report(...)` per
+  update, `progress.complete(...)` on the task's terminal state
+  (`DownloadTask` already has whatever status/progress fields the stream
+  emits -- not re-read in this pass, check `lib/models/download_task.dart`
+  before implementing).
+- **Where droidtop's own destination folder plugs in** --
+  `StorageService.getPlatformDirectory(String platform) -> Future<Directory>`
+  (`lib/services/storage_service.dart:97`) is the one seam
+  `DownloadService` actually calls through for "where do I write this
+  file". The adapter's job is a `StorageService` subclass/wrapper that
+  overrides just this method to return the real folder
+  `PluginContext.libraryFolderPath(systemId)` hands the plugin, instead of
+  romgi's own app-storage layout -- exactly the "hand over the destination
+  folder PATH, plugin writes real files into it" contract §12a already
+  specifies, needing no change to `DownloadService` itself.
+- **Construction cost, not yet resolved:** `DownloadService`'s constructor
+  takes seven required collaborators (`DatabaseService`, `RomDatabaseService`,
+  `StorageService`, `NotificationService`, `HostAdapterRegistry`,
+  `TorrentService`, `SevenZipService`, `DebridService?`) --
+  `lib/services/download_service.dart:92`. Building all seven headless
+  (no UI, no real notification channel, `NotificationService` in
+  particular -- droidtop has its own status-tile surface and almost
+  certainly wants this stubbed to a no-op rather than posting a second,
+  competing Android notification) is real, untested work this pass did
+  not attempt -- verify each constructor's own requirements before wiring
+  it up, don't assume a bare no-arg substitute compiles.
+
+**What this pass did NOT do, so the next one doesn't assume otherwise:**
+no Dart adapter code was written or committed to this repo; no manifest
+for a real romgi plugin exists; the `upstream-main` -> `main` merge above
+is still pending. This addendum is the concrete map for that work, grounded
+in flutter_embed actually existing now -- not a restatement of the
+four-routes analysis above, which stands unchanged.

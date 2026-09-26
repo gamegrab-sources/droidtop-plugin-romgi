@@ -24,7 +24,11 @@ jobs:
           git config user.email "bioshacker001@gmail.com"
 
       - name: Add upstream remote
-        run: git remote add upstream https://github.com/caprado/romgi.git || git remote set-url upstream __UPSTREAM_URL__
+        # Re-pointed 2026-09-26 (owner decision): the owner's own fork
+        # bi0shacker001/romgi main, not caprado/romgi -- the owner wants
+        # only their fork's main tracked here, no upstream feature
+        # branches merged in.
+        run: git remote add upstream https://github.com/bi0shacker001/romgi.git || git remote set-url upstream https://github.com/bi0shacker001/romgi.git
 
       - name: Fetch upstream
         run: git fetch upstream main

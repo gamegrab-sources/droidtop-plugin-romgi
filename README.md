@@ -164,20 +164,24 @@ This project is open source. See the [LICENSE](LICENSE) file for details.
 
 ## This is a private personal fork
 
-This repo mirrors upstream [caprado/romgi](https://github.com/caprado/romgi)
-for droidtop plugin work (see `PLUGIN-PLAN.md`). It is private and for the
-owner's own device only — never mention it in public droidtop docs or repos.
+This repo mirrors the owner's own fork [bi0shacker001/romgi](https://github.com/bi0shacker001/romgi)
+`main` (re-pointed 2026-09-26; previously tracked upstream caprado/romgi
+directly) for droidtop plugin work (see `PLUGIN-PLAN.md`). Only that
+fork's `main` is tracked here -- no upstream feature branches are merged
+in. It is private and for the owner's own device only — never mention it
+in public droidtop docs or repos.
 
 Branches:
-- `upstream-main` tracks upstream's `main` exactly (fast-forward only, synced daily by
-  `.github/workflows/sync-upstream.yml`).
+- `upstream-main` tracks `bi0shacker001/romgi`'s `main` exactly (fast-forward only,
+  synced daily by `.github/workflows/sync-upstream.yml`).
 - `main` is where plugin/integration work happens; it merges `upstream-main`
   automatically when there's no conflict, and the sync workflow opens an issue
   here instead of forcing anything when there is one.
 
 ### Licence
 
-romgi is MIT-licensed (see `LICENSE`, Christian Prado). MIT permits private
-modification and use with no obligation to publish source or changes — the
-only requirement is keeping the copyright notice and licence text, which this
-fork does unmodified. No further action needed for personal, unpublished use.
+romgi (upstream: caprado/romgi) is MIT-licensed (see `LICENSE`, Christian
+Prado). MIT permits private modification and use with no obligation to
+publish source or changes — the only requirement is keeping the copyright
+notice and licence text, which this fork does unmodified. No further
+action needed for personal, unpublished use.

@@ -41,7 +41,14 @@ if [ "$LINE" = "$BRANCH" ] || [ -z "$LINE" ]; then
   # actual installable line's bundle.
   LINE="dev"
 fi
-PLUGIN_ID="bi0shacker001.romgi-${LINE}"
+# The manifest's origin is "droidtop" (build.sh signs with droidtop-dev's
+# own droidtop-origin key, the only one pinned on-device -- see
+# manifest.template.json's own comment history), and PluginBundleInstaller
+# requires an id namespaced as "<origin>.<name>" -- found refused on the
+# rig ("id ... must be ... namespaced as <origin>.<name>") before this was
+# fixed. Not bi0shacker001.romgi-<line>, even though that is this repo's
+# own account name.
+PLUGIN_ID="droidtop.romgi-${LINE}"
 
 echo "Building line '$LINE' as plugin id '$PLUGIN_ID'"
 

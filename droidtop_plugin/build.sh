@@ -41,14 +41,10 @@ if [ "$LINE" = "$BRANCH" ] || [ -z "$LINE" ]; then
   # actual installable line's bundle.
   LINE="dev"
 fi
-# The manifest's origin is "droidtop" (build.sh signs with droidtop-dev's
-# own droidtop-origin key, the only one pinned on-device -- see
-# manifest.template.json's own comment history), and PluginBundleInstaller
-# requires an id namespaced as "<origin>.<name>" -- found refused on the
-# rig ("id ... must be ... namespaced as <origin>.<name>") before this was
-# fixed. Not bi0shacker001.romgi-<line>, even though that is this repo's
-# own account name.
-PLUGIN_ID="droidtop.romgi-${LINE}"
+# The manifest's origin is "bi0shacker001" -- this repo's own
+# independent signing key, not droidtop's master/root key -- and
+# PluginBundleInstaller requires an id namespaced as "<origin>.<name>".
+PLUGIN_ID="bi0shacker001.romgi-${LINE}"
 
 echo "Building line '$LINE' as plugin id '$PLUGIN_ID'"
 
@@ -102,9 +98,9 @@ PY
 
 echo "Built droidtop_plugin/build/payload/{lib,flutter_assets} and droidtop_plugin/build/manifest.json (unsigned)"
 
-if [ -n "${PLUGIN_SIGNING_KEY:-}" ]; then
-  PLUGIN_SIGNING_KEY="$PLUGIN_SIGNING_KEY" ./droidtop_plugin/sign.sh
+if [ -n "${PRIVATE_PLUGIN_SIGNING_KEY:-}" ]; then
+  PRIVATE_PLUGIN_SIGNING_KEY="$PRIVATE_PLUGIN_SIGNING_KEY" ./droidtop_plugin/sign.sh
 else
-  echo "PLUGIN_SIGNING_KEY not set -- stopping here, unsigned."
-  echo "Run droidtop_plugin/sign.sh with PLUGIN_SIGNING_KEY set (droidtop-dev only) to produce ${PLUGIN_ID}.droidplugin.tar.xz."
+  echo "PRIVATE_PLUGIN_SIGNING_KEY not set -- stopping here, unsigned."
+  echo "Run droidtop_plugin/sign.sh with PRIVATE_PLUGIN_SIGNING_KEY set to a PEM file path to produce ${PLUGIN_ID}.droidplugin.tar.xz."
 fi

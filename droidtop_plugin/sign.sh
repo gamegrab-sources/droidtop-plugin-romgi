@@ -15,7 +15,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-: "${PRIVATE_PLUGIN_SIGNING_KEY:?set to a PEM file path with this repo's independent private key}"
+: "${PRIVATE_PLUGIN_SIGNING_KEY:?set to a PEM file path for this repo own independent private key}"
 : "${BUNDLE_DIR:=droidtop_plugin/build}"
 
 test -f "$BUNDLE_DIR/manifest.json" || { echo "missing $BUNDLE_DIR/manifest.json -- run droidtop_plugin/build.sh first" >&2; exit 1; }

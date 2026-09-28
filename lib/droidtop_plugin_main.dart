@@ -129,6 +129,14 @@ void main() {
     if (call.method == 'cancelJob') return _handleCancelJob(call);
     return jsonEncode({'ok': false, 'error': 'unknown method ${call.method}'});
   });
+  // droidtop's flutter_embed readiness handshake (required of every
+  // flutter_embed plugin, not just this one): FlutterDroidtopPlugin.onLoad()
+  // on the host side blocks waiting for this exact call before returning,
+  // because executeDartEntrypoint() starting this isolate is not the same
+  // moment as this line actually running -- droidtop's own acquire_content
+  // search call used to race this isolate's own startup and fail with a
+  // channel-not-yet-registered PlatformException before this was added.
+  _channel.invokeMethod('ready');
 }
 
 // jobId -> the romgi download task id it started, so a later "cancelJob"

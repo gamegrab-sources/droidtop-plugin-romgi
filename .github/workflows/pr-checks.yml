@@ -63,134 +63,24 @@ jobs:
       - run: flutter pub get
       - run: flutter test
 
-  android-build:
-    name: Android build
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-
-      # This job builds BOTH debug and release APKs from a cold Gradle/
-      # Flutter cache on any repo that hasn't warmed one up yet (a fresh
-      # fork's own runner cache is separate from the origin repo's) --
-      # confirmed the hard way: it failed with "No space left on device"
-      # on every single run of a mirror of this repo, while the same
-      # commit built fine here, where months of runs keep the Gradle
-      # cache warm. A cold run downloads and unpacks the full Gradle
-      # dependency graph and Android SDK components on top of whatever
-      # the runner image ships with -- removing large preinstalled
-      # toolchains this build never touches (dotnet, GHC/Haskell,
-      # CodeQL, and cached Docker images) buys back real room without
-      # touching anything Android/NDK-related the pkg2zip native build
-      # actually needs.
-      - name: Free disk space
-        run: |
-          df -h /
-          sudo rm -rf /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
-          sudo docker image prune --all --force || true
-          df -h /
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
-
-      - run: flutter pub get
-
-      # Branch name for artifact naming and (via GITHUB_HEAD_REF/GITHUB_REF_NAME,
-      # read directly by android/app/build.gradle.kts) the app's package id/label.
-      - name: Compute branch slug
-        id: meta
-        run: |
-          branch="${{ github.head_ref || github.ref_name }}"
-          echo "safe_branch=${branch//\//-}" >> "$GITHUB_OUTPUT"
-
-      # Bumps android/app/revision.txt (read by build.gradle.kts to stamp
-      # "-rN" onto versionName) and commits it back so it persists across
-      # runs. [skip ci] keeps this commit from re-triggering the workflow.
-      # Only runs on pushes to feature branches — main doesn't use this,
-      # and pull_request builds shouldn't mutate branch state.
-      - name: Bump build revision
-        if: github.event_name == 'push' && github.ref_name != 'main'
-        run: |
-          cd android/app
-          rev=$(( $(cat revision.txt 2>/dev/null || echo 0) + 1 ))
-          echo "$rev" > revision.txt
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add revision.txt
-          git commit -m "Bump build revision to r$rev [skip ci]"
-          git push origin HEAD:${{ github.ref_name }}
-
-      - name: Build debug APK
-        run: flutter build apk --debug
-
-      - name: Build release APK
-        run: flutter build apk --release
-
-      - name: Upload debug APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: romgi-${{ steps.meta.outputs.safe_branch }}-debug
-          path: build/app/outputs/flutter-apk/app-debug.apk
-          retention-days: 14
-
-      - name: Upload release APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: romgi-${{ steps.meta.outputs.safe_branch }}-release
-          path: build/app/outputs/flutter-apk/app-release.apk
-          retention-days: 14
-
-      # One rolling pre-release per branch (tag build-<branch>), so there's
-      # a stable, easy-to-find download link instead of digging through
-      # Actions run history — each push replaces this branch's release
-      # in place rather than accumulating new ones. Skipped on pull_request
-      # runs (e.g. from forks) since those shouldn't publish anything.
-      - name: Rename APKs for release
-        if: github.event_name == 'push'
-        run: |
-          cp build/app/outputs/flutter-apk/app-debug.apk "romgi-${{ steps.meta.outputs.safe_branch }}-debug.apk"
-          cp build/app/outputs/flutter-apk/app-release.apk "romgi-${{ steps.meta.outputs.safe_branch }}-release.apk"
-
-      - name: Publish branch release
-        if: github.event_name == 'push'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: build-${{ steps.meta.outputs.safe_branch }}
-          name: romgi (${{ steps.meta.outputs.safe_branch }}) — latest build
-          prerelease: false
-          body: |
-            Automated build from ${{ github.sha }}. Replaced on every push to
-            `${{ steps.meta.outputs.safe_branch }}` — not a stable release,
-            but marked non-prerelease so update-tracking tools (e.g.
-            Obtainium) pick it up without manual approval.
-          files: |
-            romgi-${{ steps.meta.outputs.safe_branch }}-debug.apk
-            romgi-${{ steps.meta.outputs.safe_branch }}-release.apk
-
   droidtop-plugin-bundle:
     # Builds this branch's droidtop flutter_embed plugin bundle
     # (droidtop_plugin/, unmodified upstream repo otherwise -- see
-    # droidtop_plugin/README.md) alongside this repo's own existing
-    # checks, unsigned. Only runs where droidtop_plugin/build.sh exists
-    # (plugin-core and every plugin/<line> branch) so this job is a no-op
-    # everywhere else, including the mirrored upstream branches this
-    # repo's own sync workflow tracks.
-    name: droidtop plugin bundle (unsigned)
+    # droidtop_plugin/README.md). This is the ONLY thing plugin-core and
+    # every plugin/<line> branch ship: no APK build, no APK release --
+    # those belong to main/upstream-<line>, which don't carry this job
+    # at all (droidtop_plugin/build.sh only exists here).
+    #
+    # This plugin is private and not part of the official droidtop trust
+    # ring: it signs with its own independent P-256 key ("bi0shacker001"
+    # origin), held only as this repo's PRIVATE_PLUGIN_SIGNING_KEY
+    # secret -- never derived from and never mixed with droidtop's own
+    # master/root key. CI signs the bundle itself and publishes only the
+    # signed .droidplugin.tar.xz; there is no unsigned release asset.
+    name: droidtop plugin bundle (signed)
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -202,8 +92,8 @@ jobs:
           else
             echo "present=false" >> "$GITHUB_OUTPUT"
           fi
-          # Artifact names can't contain "/", and branch names here always
-          # do (plugin/<line>).
+          # Artifact/tag names can't contain "/", and branch names here
+          # always do (plugin/<line>).
           echo "safe_branch=${GITHUB_REF_NAME//\//-}" >> "$GITHUB_OUTPUT"
 
       - name: Install the pinned Flutter SDK
@@ -214,18 +104,40 @@ jobs:
           tar -C "$RUNNER_TEMP" -xf "$RUNNER_TEMP/flutter.tar.xz"
           echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
 
-      - name: Build the plugin bundle (unsigned)
+      - name: Build the plugin bundle (unsigned payload + manifest)
         if: steps.has_wrapper.outputs.present == 'true'
         run: |
           flutter config --no-analytics >/dev/null
           ./droidtop_plugin/build.sh
 
-      - name: Upload unsigned plugin payload
-        if: steps.has_wrapper.outputs.present == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: droidtop-plugin-bundle-${{ steps.has_wrapper.outputs.safe_branch }}
-          path: |
-            droidtop_plugin/build/manifest.json
-            droidtop_plugin/build/payload
-          retention-days: 14
+      - name: Sign the plugin bundle
+        if: steps.has_wrapper.outputs.present == 'true' && github.event_name == 'push'
+        env:
+          KEY_PEM: ${{ secrets.PRIVATE_PLUGIN_SIGNING_KEY }}
+        run: |
+          KEYFILE="$RUNNER_TEMP/private-plugin-signing-key.pem"
+          printf '%s' "$KEY_PEM" > "$KEYFILE"
+          chmod 600 "$KEYFILE"
+          PRIVATE_PLUGIN_SIGNING_KEY="$KEYFILE" ./droidtop_plugin/sign.sh
+          rm -f "$KEYFILE"
+
+      # One rolling release per branch (tag build-<branch>), same scheme
+      # main/upstream-<line> use for their APK builds -- replaces the
+      # release in place (delete + recreate, so a stale APK asset from
+      # before this job existed never lingers) rather than accumulating.
+      # Skipped on pull_request runs: those shouldn't publish anything or
+      # need the signing key.
+      - name: Publish the signed bundle release
+        if: steps.has_wrapper.outputs.present == 'true' && github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PLUGIN_ID="$(python3 -c "import json; print(json.load(open('droidtop_plugin/build/manifest.json'))['id'])")"
+          BUNDLE="${PLUGIN_ID}.droidplugin.tar.xz"
+          test -f "$BUNDLE" || { echo "missing $BUNDLE -- sign step didn't run or failed" >&2; exit 1; }
+          tag="build-${{ steps.has_wrapper.outputs.safe_branch }}"
+          gh release delete "$tag" --yes --cleanup-tag --repo "${{ github.repository }}" 2>/dev/null || true
+          gh release create "$tag" "$BUNDLE" droidtop-plugin-key.json \
+            --repo "${{ github.repository }}" \
+            --title "romgi (${{ github.ref_name }}) — latest plugin bundle" \
+            --notes "Automated build from ${{ github.sha }}. Signed droidtop plugin bundle, private (independent \`bi0shacker001\` origin key -- see droidtop_plugin/README.md, not the official droidtop trust ring). Replaced on every push to \`${{ github.ref_name }}\`."

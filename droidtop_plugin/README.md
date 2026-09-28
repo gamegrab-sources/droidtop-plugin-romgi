@@ -13,8 +13,12 @@ with plugin-core merged in).
   per-line source or manifest edits are needed: the plugin id is derived
   from the current branch name (`plugin/<line>` -> id
   `bi0shacker001.romgi-<line>`).
-- `sign.sh` -- signs `build.sh`'s output with the plugin origin's private
-  key. droidtop-dev only; the key never goes into this repo or CI.
+- `sign.sh` -- signs `build.sh`'s output. Private plugin, own
+  independent P-256 key (origin `bi0shacker001`), not the official
+  droidtop trust ring, not derived from droidtop's own root. CI runs
+  this step and publishes only the signed bundle -- see
+  `droidtop-plugin-key.json` at the repo root for the matching public
+  half, which droidtop reads from here directly.
 - `manifest.template.json` -- the shared manifest shape (capabilities,
   ABIs, runtime kind); `build.sh` fills in `id`/`label`/`runtimeVersion`/
   `payload` per build.

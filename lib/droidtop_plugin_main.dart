@@ -26,6 +26,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import 'main.dart' as app;
 import 'models/download_task.dart';
 import 'models/rom_entry.dart';
 import 'services/database_service.dart';
@@ -120,6 +121,15 @@ class _Runtime {
     }
   }
 }
+
+/// The app's own full-screen UI (the `ui.main` extension point in
+/// droidtop_plugin/manifest.template.json, droidtop docs/plugin-api.md 1.7).
+/// droidtop starts this function on a second engine in this plugin's process
+/// when the person opens the plugin's own screen; it is the same entry the
+/// standalone app runs, lib/main.dart's [app.main]. `vm:entry-point` keeps it
+/// in the AOT snapshot, which is built from this file as its target.
+@pragma('vm:entry-point')
+void mainUi() => app.main();
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();

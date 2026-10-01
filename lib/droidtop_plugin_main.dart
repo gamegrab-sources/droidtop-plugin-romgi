@@ -343,6 +343,78 @@ Future<String> _handleStartJob(MethodCall call) async {
   return jsonEncode({'ok': true});
 }
 
+/// Runs a contract 2 action that the host routed through startJob. The
+/// envelope is the same one used by handle; source jobs additionally carry
+/// the resolved destination in their host-owned context.
+Future<void> _runV2Job(
+  String jobId,
+  Map<String, dynamic> envelope,
+) async {
+  try {
+    if (envelope['contract'] != 2) {
+      await _reportComplete(jobId, {
+        'ok': false,
+        'error': 'Unsupported contract',
+      });
+      return;
+    }
+    final point = envelope['point'] as String?;
+    final op = envelope['op'] as String?;
+    final args = (envelope['args'] as Map<String, dynamic>?) ?? const {};
+
+    if (point == 'ui.settings' && op == 'downloadIndex') {
+      final db = RomDatabaseService();
+      var progressReports = Future<void>.value();
+      await db.downloadDatabase(onProgress: (progress) {
+        final percent = (progress * 100).round().clamp(0, 100).toInt();
+        progressReports = progressReports.then((_) =>
+            _reportProgress(jobId, percent, 'Downloading game index'));
+      });
+      await progressReports;
+      await _reportComplete(jobId, {
+        'ok': true,
+        'values': {'message': 'Game index downloaded'},
+      });
+      return;
+    }
+
+    if (point == 'library.sources' && op == 'acquire') {
+      final ref = args['ref'];
+      if (ref is! Map<String, dynamic>) {
+        await _reportComplete(jobId, {
+          'ok': false,
+          'error': 'Missing game reference',
+        });
+        return;
+      }
+      final context = (args['context'] as Map<String, dynamic>?) ?? const {};
+      final destinationPath = context['destination'] as String?;
+      if (destinationPath == null || destinationPath.isEmpty) {
+        await _reportComplete(jobId, {
+          'ok': false,
+          'error': 'Missing destination',
+        });
+        return;
+      }
+      final values = (args['values'] as Map<String, dynamic>?) ?? const {};
+      final linkIndex = int.tryParse(values['link'] as String? ?? '') ?? 0;
+      await _runDownloadJob(jobId, {
+        'destinationPath': destinationPath,
+        'entry': jsonEncode(ref),
+        'linkIndex': linkIndex,
+      });
+      return;
+    }
+
+    await _reportComplete(jobId, {
+      'ok': false,
+      'error': 'Unsupported job operation',
+    });
+  } catch (e) {
+    await _reportComplete(jobId, {'ok': false, 'error': e.toString()});
+  }
+}
+
 Future<void> _reportProgress(String jobId, int percent, String statusLine) {
   return _channel.invokeMethod('jobProgress', jsonEncode({
     'jobId': jobId,

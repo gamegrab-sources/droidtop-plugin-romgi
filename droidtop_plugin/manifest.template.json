@@ -5,7 +5,8 @@
   "kind": "flutter_embed",
   "provides": [
     { "point": "library.sources", "version": 1, "id": "romgi", "label": "romgi" },
-    { "point": "ui.settings", "version": 1, "id": "main", "target": "plugin" }
+    { "point": "ui.settings", "version": 1, "id": "main", "target": "plugin" },
+    { "point": "ui.main", "version": 1, "entrypoint": "mainUi" }
   ],
   "contractVersion": 2,
   "requestsRoot": false,

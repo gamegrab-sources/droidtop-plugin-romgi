@@ -29,12 +29,14 @@ integration surface (`RomDatabaseService.search`, `DownloadService.
 addDownload`/`downloadStream`, `StorageService.getPlatformDirectory`)
 `lib/droidtop_plugin_main.dart` calls into.
 
-Capabilities implemented: `acquire_content` -- `invoke(action=search)` for
-a local-index search (bounded, matches droidtop's 15s call watchdog since
-this never leaves the local sqlite index), and `startJob(action=download)`
-for the actual download with progress, since that is real long-running
-work. `cancelJob` forwards to `DownloadService.cancelDownload`.
+Contract 2 extension points implemented: `library.sources` provides a
+query/platform/region form, local-index search results, a detail page with a
+link picker, and an acquire job; `ui.settings` reports game-index status and
+provides a progress-reporting job to download the index. Both jobs use the
+contract 2 `startJob` envelope. The legacy `acquire_content` invoke/download
+path remains available for contract 1 manifests, and `cancelJob` forwards to
+`DownloadService.cancelDownload`.
 
-Not implemented in this v1: `metadata_source` (romgi as a scrape source
+Not implemented: `metadata_source` (romgi as a scrape source
 for droidtop's own scanner) and `library_action`/`app_status` -- both are
 declared as future capabilities in PLUGIN-PLAN.md, not built here.

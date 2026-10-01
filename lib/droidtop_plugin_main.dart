@@ -124,6 +124,7 @@ class _Runtime {
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   _channel.setMethodCallHandler((call) async {
+    if (call.method == 'handle') return _handleHandle(call);
     if (call.method == 'invoke') return _handleInvoke(call);
     if (call.method == 'startJob') return _handleStartJob(call);
     if (call.method == 'cancelJob') return _handleCancelJob(call);
@@ -164,6 +165,130 @@ Future<String> _handleCancelJob(MethodCall call) async {
 Map<String, dynamic> _decodePayload(MethodCall call) =>
     jsonDecode(call.arguments as String) as Map<String, dynamic>;
 
+Future<String> _handleHandle(MethodCall call) async {
+  try {
+    final envelope = _decodePayload(call);
+    if (envelope['contract'] != 2) {
+      return _v2Error('INVALID_ARGS', 'Unsupported contract');
+    }
+    final point = envelope['point'] as String?;
+    final op = envelope['op'] as String?;
+    final args = (envelope['args'] as Map<String, dynamic>?) ?? const {};
+    if (point == 'ui.settings') {
+      if (op == 'view') return await _settingsView();
+      return _v2Error('UNSUPPORTED', 'Unsupported settings operation');
+    }
+    if (point == 'library.sources') {
+      switch (op) {
+        case 'form': return await _sourceForm(args);
+        case 'search': return await _sourceSearch(args);
+        case 'detail': return await _sourceDetail(args);
+        case 'acquire':
+          return _v2Error('UNSUPPORTED', 'Acquisition runs as a job');
+      }
+    }
+    return _v2Error('UNSUPPORTED', 'Unsupported extension point');
+  } catch (_) {
+    return _v2Error('FAILED', 'The plugin could not complete the request');
+  }
+}
+
+String _v2Data(Object data) => jsonEncode({'ok': true, 'data': data});
+String _v2Error(String code, String message) =>
+    jsonEncode({'ok': false, 'error': {'code': code, 'message': message}});
+
+Map<String, dynamic> _view(String title, List<Map<String, dynamic>> items,
+        {String? subtitle}) =>
+    {'view': 1, 'title': title, 'subtitle': subtitle,
+     'sections': [{'id': 'main', 'items': items}]};
+
+Future<String> _settingsView() async {
+  final db = RomDatabaseService();
+  final ready = await db.isDatabaseReady();
+  final local = ready ? await db.getLocalVersion() : null;
+  final view = _view('romgi', [
+    {'type': 'info', 'id': 'index', 'title': 'Game index',
+     'value': ready ? 'Downloaded${local == null ? '' : ' · ${local.entries} games'}' : 'Not downloaded'},
+    {'type': 'button', 'id': 'download-index', 'title': 'Download the game index',
+     'action': {'kind': 'job', 'op': 'downloadIndex', 'title': 'Download game index'}},
+  ]);
+  return _v2Data(view);
+}
+
+Future<String> _sourceForm(Map<String, dynamic> args) async {
+  final context = (args['context'] as Map<String, dynamic>?) ?? const {};
+  final system = (context['system'] as Map<String, dynamic>?) ?? const {};
+  final systemId = system['id'] as String? ?? '';
+  final regions = <Map<String, dynamic>>[
+    {'value': '', 'label': 'Any region'},
+  ];
+  try {
+    for (final region in await RomDatabaseService().getRegions()) {
+      regions.add({'value': region.id, 'label': region.name});
+    }
+  } catch (_) {}
+  final systems = <Map<String, dynamic>>[
+    {'value': '', 'label': 'All platforms'},
+  ];
+  try {
+    for (final platform in await RomDatabaseService().getPlatforms()) {
+      systems.add({'value': platform.id, 'label': '${platform.brand} ${platform.name}'.trim()});
+    }
+  } catch (_) {}
+  final items = <Map<String, dynamic>>[
+    {'type': 'text', 'id': 'query', 'title': 'Search', 'value': ''},
+    {'type': 'choice', 'id': 'platform', 'title': 'Platform', 'options': systems, 'value': systemId},
+    {'type': 'choice', 'id': 'region', 'title': 'Region', 'options': regions, 'value': ''},
+  ];
+  return _v2Data(_view('Search games', items));
+}
+
+Future<String> _sourceSearch(Map<String, dynamic> args) async {
+  final context = (args['context'] as Map<String, dynamic>?) ?? const {};
+  final system = (context['system'] as Map<String, dynamic>?) ?? const {};
+  final values = (args['values'] as Map<String, dynamic>?) ?? const {};
+  final platform = (values['platform'] as String?) ?? system['id'] as String?;
+  final region = values['region'] as String?;
+  final db = RomDatabaseService();
+  if (!await db.isDatabaseReady()) {
+    return _v2Error('FAILED', 'The game index is not downloaded yet. Open this plugin’s Settings page to download it.');
+  }
+  final result = await db.search(
+    query: (args['query'] as String?) ?? values['query'] as String?,
+    platforms: platform == null || platform.isEmpty ? null : [platform],
+    regions: region == null || region.isEmpty ? null : [region],
+    maxResults: 50,
+  );
+  return _v2Data({'results': result.entries.map((entry) => {
+    'id': entry.slug,
+    'title': entry.title,
+    'subtitle': entry.platform,
+    'columns': [if (entry.regions.isNotEmpty) entry.regions.join(', ')],
+    'badges': [if (entry.links.isNotEmpty) '${entry.links.length} downloads'],
+    'platform': entry.platform,
+    'ref': entry.toJson(),
+  }).toList()});
+}
+
+Future<String> _sourceDetail(Map<String, dynamic> args) async {
+  final ref = args['ref'];
+  if (ref is! Map<String, dynamic>) return _v2Error('INVALID_ARGS', 'Missing game reference');
+  final entry = RomEntry.fromJson(ref);
+  final options = <Map<String, dynamic>>[];
+  for (var i = 0; i < entry.links.length; i++) {
+    final link = entry.links[i];
+    options.add({'value': '$i', 'label': '${link.name} · ${link.host} · ${link.sizeStr}'});
+  }
+  final view = _view(entry.title, [
+    {'type': 'info', 'id': 'platform', 'title': 'Platform', 'value': entry.platform},
+    if (entry.regions.isNotEmpty) {'type': 'info', 'id': 'regions', 'title': 'Regions', 'value': entry.regions.join(', ')},
+    {'type': 'choice', 'id': 'link', 'title': 'Download', 'options': options, 'value': options.isEmpty ? '' : options.first['value']},
+    if (options.isNotEmpty) {'type': 'button', 'id': 'acquire', 'title': 'Download game',
+     'action': {'kind': 'job', 'op': 'acquire', 'title': 'Download ${entry.title}', 'args': {'ref': ref}}},
+  ]);
+  return _v2Data(view);
+}
+
 Future<String> _handleInvoke(MethodCall call) async {
   try {
     final payload = _decodePayload(call);
@@ -203,7 +328,13 @@ Future<String> _search(Map<String, dynamic> args) async {
 Future<String> _handleStartJob(MethodCall call) async {
   final payload = _decodePayload(call);
   final jobId = payload['jobId'] as String;
-  final args = (payload['args'] as Map<String, dynamic>?) ?? const {};
+  final rawArgs = payload['args'];
+  if (rawArgs is Map<String, dynamic> && rawArgs['call'] is String) {
+    final envelope = jsonDecode(rawArgs['call'] as String) as Map<String, dynamic>;
+    unawaited(_runV2Job(jobId, envelope));
+    return jsonEncode({'ok': true});
+  }
+  final args = (rawArgs as Map<String, dynamic>?) ?? const {};
   // Fire-and-forget from this handler's own point of view: the real
   // answer goes back over "jobProgress"/"jobComplete" (matching
   // FlutterDroidtopPlugin.startJob's own contract, docs/SPEC.md 12a),

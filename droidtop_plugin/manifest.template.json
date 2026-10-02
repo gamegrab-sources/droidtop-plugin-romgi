@@ -1,12 +1,29 @@
 {
   "origin": "bi0shacker001",
-  "description": "romgi (github.com/bi0shacker001/romgi) as a droidtop flutter_embed plugin -- search and download into droidtop's own library folders. Private, personal use only.",
+  "description": "romgi (github.com/bi0shacker001/romgi) as a droidtop flutter_embed plugin -- search the game index and download into droidtop's own library folders. Private, personal use only.",
   "version": "1.0.0",
   "kind": "flutter_embed",
   "provides": [
     { "point": "library.sources", "version": 1, "id": "romgi", "label": "romgi" },
     { "point": "ui.settings", "version": 1, "id": "main", "target": "plugin" },
     { "point": "ui.main", "version": 1, "entrypoint": "mainUi" }
+  ],
+  "permissions": [
+    {
+      "id": "net.domains",
+      "domains": [
+        "raw.githubusercontent.com",
+        "api.real-debrid.com",
+        "api.torbox.app",
+        "api.screenscraper.fr",
+        "www.steamgriddb.com"
+      ],
+      "reason": "Downloads the game index, and from romgi's own screen looks up game details and your debrid account"
+    },
+    {
+      "id": "library.folders.write",
+      "reason": "Games you choose to download are placed in the matching game folder"
+    }
   ],
   "contractVersion": 2,
   "requestsRoot": false,

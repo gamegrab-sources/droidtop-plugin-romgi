@@ -1,42 +1,36 @@
-// droidtop flutter_embed adapter for romgi (private plugin-core wrapper --
-// see droidtop_plugin/README.md in this same commit). Headless: no UI, no
-// runApp(). FlutterDroidtopPlugin hosts this engine inside droidtop's own
-// :pluginhost process and only ever talks to it over one MethodChannel,
-// same "JSON in, JSON out, no rendering surface" shape droidtop's own
-// samples/plugin-sample-flutter-statustile uses.
+// droidtop flutter_embed adapter for romgi (private plugin-core wrapper, see
+// droidtop_plugin/README.md). Headless: FlutterDroidtopPlugin hosts this
+// engine inside droidtop's :pluginhost process and talks to it over one
+// MethodChannel, "JSON in, JSON out", plugin API contract 2.
 //
-// This file is the ONLY plugin-core addition inside lib/ -- everything it
-// calls (RomDatabaseService, DownloadService, the models) is romgi's own,
-// unmodified code, reused directly per PLUGIN-PLAN.md's route A. The one
-// other plugin-core change in this repo is notification_service.dart's
-// additive NotificationService.silent() factory (droidtop has its own
-// status surface; this embedding must never post a second, competing
-// Android notification).
+// This file and lib/droidtop_plugin_logic.dart (the pure view and descriptor
+// builders) are the whole Dart side of the wrapper. Everything they call
+// (RomDatabaseService and the models) is romgi's own, unmodified code.
 //
-// The plugin id (and therefore this channel's name, which
-// FlutterDroidtopPlugin derives as "dev.droidtop.pluginhost/<pluginId>")
-// differs per line (bi0shacker001.romgi-main, bi0shacker001.romgi-3ds-decrypt,
-// ...), so it is NOT hardcoded here -- droidtop_plugin/build.sh passes it
-// as a compile-time --dart-define, read via String.fromEnvironment, so
-// this one source file is identical across every plugin/<line> branch.
+// The plugin id, and so the channel name FlutterDroidtopPlugin derives as
+// "dev.droidtop.pluginhost/<pluginId>", differs per line
+// (bi0shacker001.romgi-main, ...). It is not hardcoded: droidtop_plugin/
+// build.sh passes it as --dart-define, so this one file is identical on
+// every plugin/<line> branch.
+//
+// What the plugin does, by extension point (manifest.template.json):
+//   library.sources  form / search / detail from the local game index; the
+//                    acquire job returns a download descriptor, so droidtop
+//                    downloads the single file itself (DownloadManager,
+//                    droidtop's Downloads list) and places it in the system's
+//                    folder. The plugin never writes a game file.
+//   ui.settings      index status plus a job that downloads the index.
+//   ui.main          romgi's own app, on a second engine.
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import 'droidtop_plugin_logic.dart';
 import 'main.dart' as app;
-import 'models/download_task.dart';
-import 'models/rom_entry.dart';
-import 'services/database_service.dart';
-import 'services/download_service.dart';
-import 'services/host_adapter.dart';
-import 'services/notification_service.dart';
 import 'services/rom_database_service.dart';
-import 'services/seven_zip_service.dart';
-import 'services/storage_service.dart';
-import 'services/torrent_service.dart';
 
 const String _pluginId = String.fromEnvironment(
   'DROIDTOP_PLUGIN_ID',
@@ -46,386 +40,231 @@ final MethodChannel _channel = MethodChannel(
   'dev.droidtop.pluginhost/$_pluginId',
 );
 
-/// The one seam PLUGIN-PLAN.md's integration map identifies:
-/// [DownloadService] only ever calls [getPlatformDirectory] to decide
-/// where a file lands. Overriding just that method (romgi's own class is
-/// a plain, non-final, non-sealed class -- confirmed by reading
-/// services/storage_service.dart before writing this) hands droidtop's
-/// own real destination folder straight through, with zero changes to
-/// DownloadService, PlaylistWriter or anything else that already calls
-/// through StorageService.
-class DroidtopStorageService extends StorageService {
-  DroidtopStorageService(this._destinationPath);
-  final String _destinationPath;
-
-  @override
-  Future<Directory> getPlatformDirectory(String platform) async {
-    final dir = Directory(_destinationPath);
-    if (!await dir.exists()) {
-      await dir.create(recursive: true);
-    }
-    return dir;
-  }
-}
-
-class _Runtime {
-  _Runtime._(this.downloads);
-  final DownloadService downloads;
-
-  static _Runtime? _instance;
-  static bool _initializing = false;
-
-  /// Built lazily on first real call rather than in [main] -- the
-  /// destination folder isn't known until droidtop's first invoke/startJob
-  /// call hands it over as an argument, and DownloadService's storage
-  /// dependency is fixed at construction.
-  static _Runtime? existing() => _instance;
-
-  static Future<_Runtime> forDestination(String destinationPath) async {
-    // Only one plugin instance runs per :pluginhost process (one
-    // FlutterEngine per plugin, per docs/SPEC.md 12a), so a single
-    // process-lifetime instance -- rebuilt if the destination path
-    // changes, since StorageService is otherwise wired at construction --
-    // is the right lifetime, not a new DownloadService per call.
-    final existing = _instance;
-    if (existing != null) return existing;
-    while (_initializing) {
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      final ready = _instance;
-      if (ready != null) return ready;
-    }
-    _initializing = true;
-    try {
-      final downloads = DownloadService(
-        db: DatabaseService(),
-        romDb: RomDatabaseService(),
-        storage: DroidtopStorageService(destinationPath),
-        notifications: NotificationService.silent(),
-        adapters: HostAdapterRegistry(),
-        torrents: TorrentService(),
-        sevenZip: SevenZipService(),
-      );
-      // Deliberately NOT calling downloads.initialize(): that also starts
-      // flutter_foreground_task's own foreground service/notification,
-      // which is exactly the second, droidtop-competing surface
-      // NotificationService.silent() already avoids on the notification
-      // side. addDownload/downloadStream work without it; only the
-      // "resume pending downloads from last app run" behavior is skipped,
-      // which is correct here -- this process doesn't persist between
-      // droidtop plugin loads the way romgi's own app does.
-      final runtime = _Runtime._(downloads);
-      _instance = runtime;
-      return runtime;
-    } finally {
-      _initializing = false;
-    }
-  }
-}
-
-/// The app's own full-screen UI (the `ui.main` extension point in
-/// droidtop_plugin/manifest.template.json, droidtop docs/plugin-api.md 1.7).
-/// droidtop starts this function on a second engine in this plugin's process
-/// when the person opens the plugin's own screen; it is the same entry the
-/// standalone app runs, lib/main.dart's [app.main]. `vm:entry-point` keeps it
-/// in the AOT snapshot, which is built from this file as its target.
+/// The app's own full-screen UI (the `ui.main` extension point, droidtop
+/// docs/plugin-api.md 1.7): droidtop starts this function on a second engine
+/// in this plugin's process when the person opens the plugin's own screen. It
+/// is the entry the standalone app runs. `vm:entry-point` keeps it in the AOT
+/// snapshot, which is built from this file as its target.
 @pragma('vm:entry-point')
 void mainUi() => app.main();
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   _channel.setMethodCallHandler((call) async {
-    if (call.method == 'handle') return _handleHandle(call);
-    if (call.method == 'invoke') return _handleInvoke(call);
-    if (call.method == 'startJob') return _handleStartJob(call);
-    if (call.method == 'cancelJob') return _handleCancelJob(call);
-    return jsonEncode({'ok': false, 'error': 'unknown method ${call.method}'});
+    switch (call.method) {
+      case 'handle':
+        return _handle(call);
+      case 'startJob':
+        return _startJob(call);
+      case 'cancelJob':
+        return _cancelJob(call);
+    }
+    return v2Error('UNSUPPORTED', 'Unknown method ${call.method}');
   });
-  // droidtop's flutter_embed readiness handshake (required of every
-  // flutter_embed plugin, not just this one): FlutterDroidtopPlugin.onLoad()
-  // on the host side blocks waiting for this exact call before returning,
-  // because executeDartEntrypoint() starting this isolate is not the same
-  // moment as this line actually running -- droidtop's own acquire_content
-  // search call used to race this isolate's own startup and fail with a
-  // channel-not-yet-registered PlatformException before this was added.
+  // droidtop's flutter_embed readiness handshake, required of every
+  // flutter_embed plugin: FlutterDroidtopPlugin.onLoad() blocks on this call,
+  // because starting this isolate is not the moment this line runs, and a
+  // handle() sent earlier fails with a channel-not-registered error. It goes
+  // right after setMethodCallHandler and before any other work.
   _channel.invokeMethod('ready');
 }
 
-// jobId -> the romgi download task id it started, so a later "cancelJob"
-// (best-effort, per DroidtopPlugin.cancelJob's own contract) can call
-// through to DownloadService.cancelDownload with the id IT actually
-// understands, not droidtop's own jobId.
-final Map<String, String> _jobTaskIds = {};
-
-Future<String> _handleCancelJob(MethodCall call) async {
-  try {
-    final payload = _decodePayload(call);
-    final jobId = payload['jobId'] as String?;
-    final taskId = jobId == null ? null : _jobTaskIds[jobId];
-    if (taskId != null) {
-      final runtime = _Runtime.existing();
-      await runtime?.downloads.cancelDownload(taskId);
-    }
-  } catch (_) {
-    // Best-effort, per DroidtopPlugin.cancelJob's own contract -- a
-    // cancel that can't be matched to a running task is not an error.
-  }
-  return jsonEncode({'ok': true});
-}
-
-Map<String, dynamic> _decodePayload(MethodCall call) =>
+Map<String, dynamic> _decode(MethodCall call) =>
     jsonDecode(call.arguments as String) as Map<String, dynamic>;
 
-Future<String> _handleHandle(MethodCall call) async {
+Map<String, dynamic> _map(Object? value) =>
+    value is Map<String, dynamic> ? value : const <String, dynamic>{};
+
+// ---------------------------------------------------------------- handle
+
+Future<String> _handle(MethodCall call) async {
   try {
-    final envelope = _decodePayload(call);
+    final envelope = _decode(call);
     if (envelope['contract'] != 2) {
-      return _v2Error('INVALID_ARGS', 'Unsupported contract');
+      return v2Error('INVALID_ARGS', 'Unsupported contract');
     }
     final point = envelope['point'] as String?;
     final op = envelope['op'] as String?;
-    final args = (envelope['args'] as Map<String, dynamic>?) ?? const {};
-    if (point == 'ui.settings') {
-      if (op == 'view') return await _settingsView();
-      return _v2Error('UNSUPPORTED', 'Unsupported settings operation');
-    }
+    final args = _map(envelope['args']);
+    if (point == 'ui.settings' && op == 'view') return await _settings();
     if (point == 'library.sources') {
       switch (op) {
-        case 'form': return await _sourceForm(args);
-        case 'search': return await _sourceSearch(args);
-        case 'detail': return await _sourceDetail(args);
+        case 'form':
+          return await _form(args);
+        case 'search':
+          return await _search(args);
+        case 'detail':
+          return await _detail(args);
         case 'acquire':
-          return _v2Error('UNSUPPORTED', 'Acquisition runs as a job');
+          return v2Error('UNSUPPORTED', 'Acquiring runs as a job');
       }
     }
-    return _v2Error('UNSUPPORTED', 'Unsupported extension point');
+    return v2Error('UNSUPPORTED', 'Unsupported extension point or operation');
   } catch (_) {
-    return _v2Error('FAILED', 'The plugin could not complete the request');
+    return v2Error('FAILED', 'romgi could not complete the request');
   }
 }
 
-String _v2Data(Object data) => jsonEncode({'ok': true, 'data': data});
-String _v2Error(String code, String message) =>
-    jsonEncode({'ok': false, 'error': {'code': code, 'message': message}});
-
-Map<String, dynamic> _view(String title, List<Map<String, dynamic>> items,
-        {String? subtitle}) =>
-    {'view': 1, 'title': title, 'subtitle': subtitle,
-     'sections': [{'id': 'main', 'items': items}]};
-
-Future<String> _settingsView() async {
+Future<String> _settings() async {
   final db = RomDatabaseService();
   final ready = await db.isDatabaseReady();
-  final local = ready ? await db.getLocalVersion() : null;
-  final view = _view('romgi', [
-    {'type': 'info', 'id': 'index', 'title': 'Game index',
-     'value': ready ? 'Downloaded${local == null ? '' : ' · ${local.entries} games'}' : 'Not downloaded'},
-    {'type': 'button', 'id': 'download-index', 'title': 'Download the game index',
-     'action': {'kind': 'job', 'op': 'downloadIndex', 'title': 'Download game index'}},
-  ]);
-  return _v2Data(view);
+  final version = ready ? await db.getLocalVersion() : null;
+  return v2Data(settingsView(indexReady: ready, entries: version?.entries));
 }
 
-Future<String> _sourceForm(Map<String, dynamic> args) async {
-  final context = (args['context'] as Map<String, dynamic>?) ?? const {};
-  final system = (context['system'] as Map<String, dynamic>?) ?? const {};
-  final systemId = system['id'] as String? ?? '';
-  final regions = <Map<String, dynamic>>[
-    {'value': '', 'label': 'Any region'},
-  ];
-  try {
-    for (final region in await RomDatabaseService().getRegions()) {
-      regions.add({'value': region.id, 'label': region.name});
-    }
-  } catch (_) {}
-  final systems = <Map<String, dynamic>>[
-    {'value': '', 'label': 'All platforms'},
-  ];
-  try {
-    for (final platform in await RomDatabaseService().getPlatforms()) {
-      systems.add({'value': platform.id, 'label': '${platform.brand} ${platform.name}'.trim()});
-    }
-  } catch (_) {}
-  final items = <Map<String, dynamic>>[
-    {'type': 'text', 'id': 'query', 'title': 'Search', 'value': ''},
-    {'type': 'choice', 'id': 'platform', 'title': 'Platform', 'options': systems, 'value': systemId},
-    {'type': 'choice', 'id': 'region', 'title': 'Region', 'options': regions, 'value': ''},
-  ];
-  return _v2Data(_view('Search games', items));
-}
+String _systemId(Map<String, dynamic> args) =>
+    _map(_map(args['context'])['system'])['id'] as String? ?? '';
 
-Future<String> _sourceSearch(Map<String, dynamic> args) async {
-  final context = (args['context'] as Map<String, dynamic>?) ?? const {};
-  final system = (context['system'] as Map<String, dynamic>?) ?? const {};
-  final values = (args['values'] as Map<String, dynamic>?) ?? const {};
-  final platform = (values['platform'] as String?) ?? system['id'] as String?;
-  final region = values['region'] as String?;
+Future<String> _form(Map<String, dynamic> args) async {
   final db = RomDatabaseService();
   if (!await db.isDatabaseReady()) {
-    return _v2Error('FAILED', 'The game index is not downloaded yet. Open this plugin’s Settings page to download it.');
+    return v2Error('FAILED', _indexMissing);
   }
+  return v2Data(sourceForm(
+    systemId: _systemId(args),
+    platforms: await db.getPlatforms(),
+    regions: await db.getRegions(),
+  ));
+}
+
+const String _indexMissing =
+    'The game index is not downloaded yet. Open this plugin’s Settings page to download it.';
+
+Future<String> _search(Map<String, dynamic> args) async {
+  final db = RomDatabaseService();
+  if (!await db.isDatabaseReady()) {
+    return v2Error('FAILED', _indexMissing);
+  }
+  final values = _map(args['values']);
+  // An empty platform is the person's "All platforms"; an absent one (the
+  // default form) means the system the search was opened from.
+  final platform =
+      values.containsKey('platform') ? values['platform'] as String? : _systemId(args);
+  final region = values['region'] as String?;
   final result = await db.search(
     query: (args['query'] as String?) ?? values['query'] as String?,
     platforms: platform == null || platform.isEmpty ? null : [platform],
     regions: region == null || region.isEmpty ? null : [region],
-    maxResults: 50,
+    maxResults: maxSearchResults,
   );
-  return _v2Data({'results': result.entries.map((entry) => {
-    'id': entry.slug,
-    'title': entry.title,
-    'subtitle': entry.platform,
-    'columns': [if (entry.regions.isNotEmpty) entry.regions.join(', ')],
-    'badges': [if (entry.links.isNotEmpty) '${entry.links.length} downloads'],
-    'platform': entry.platform,
-    'ref': entry.toJson(),
-  }).toList()});
+  return v2Data({'results': result.entries.map(searchResult).toList()});
 }
 
-Future<String> _sourceDetail(Map<String, dynamic> args) async {
-  final ref = args['ref'];
-  if (ref is! Map<String, dynamic>) return _v2Error('INVALID_ARGS', 'Missing game reference');
-  final entry = RomEntry.fromJson(ref);
-  final options = <Map<String, dynamic>>[];
-  for (var i = 0; i < entry.links.length; i++) {
-    final link = entry.links[i];
-    options.add({'value': '$i', 'label': '${link.name} · ${link.host} · ${link.sizeStr}'});
+Future<String> _detail(Map<String, dynamic> args) async {
+  final slug = _map(args['ref'])['slug'] as String?;
+  if (slug == null || slug.isEmpty) {
+    return v2Error('INVALID_ARGS', 'Missing game reference');
   }
-  final view = _view(entry.title, [
-    {'type': 'info', 'id': 'platform', 'title': 'Platform', 'value': entry.platform},
-    if (entry.regions.isNotEmpty) {'type': 'info', 'id': 'regions', 'title': 'Regions', 'value': entry.regions.join(', ')},
-    {'type': 'choice', 'id': 'link', 'title': 'Download', 'options': options, 'value': options.isEmpty ? '' : options.first['value']},
-    if (options.isNotEmpty) {'type': 'button', 'id': 'acquire', 'title': 'Download game',
-     'action': {'kind': 'job', 'op': 'acquire', 'title': 'Download ${entry.title}', 'args': {'ref': ref}}},
-  ]);
-  return _v2Data(view);
+  final entry = await RomDatabaseService().getEntry(slug);
+  if (entry == null) return v2Error('NOT_FOUND', 'That game is not in the index');
+  return v2Data(detailView(entry));
 }
 
-Future<String> _handleInvoke(MethodCall call) async {
-  try {
-    final payload = _decodePayload(call);
-    final capability = payload['capability'] as String?;
-    if (capability != 'acquire_content') {
-      return jsonEncode({'ok': false, 'error': 'unsupported capability $capability'});
-    }
-    final args = (payload['args'] as Map<String, dynamic>?) ?? const {};
-    final action = args['action'] as String?;
-    if (action == 'search') return await _search(args);
-    return jsonEncode({'ok': false, 'error': 'acquire_content invoke only supports action=search (use startJob for action=download)'});
-  } catch (e) {
-    return jsonEncode({'ok': false, 'error': e.toString()});
-  }
-}
+// ------------------------------------------------------------------ jobs
 
-/// Search is a plain request/response over `invoke()`: romgi's own index
-/// is a local sqlite database (RomDatabaseService), not a network round
-/// trip, so it comfortably fits inside PluginRunner.CALL_TIMEOUT_MS
-/// (15s) the way a real network scrape would not.
-Future<String> _search(Map<String, dynamic> args) async {
-  final query = args['query'] as String?;
-  final platform = args['platform'] as String?;
-  final romDb = RomDatabaseService();
-  final result = await romDb.search(
-    query: query,
-    platforms: platform == null ? null : [platform],
-    maxResults: (args['maxResults'] as num?)?.toInt() ?? 50,
-  );
-  final entries = result.entries.map((e) => e.toJson()).toList();
-  return jsonEncode({
-    'ok': true,
-    'values': {'entries': jsonEncode(entries)},
-  });
-}
+// jobId -> the token of the transfer it runs, so cancelJob (best effort, per
+// DroidtopPlugin.cancelJob) can stop it.
+final Map<String, CancelToken> _running = {};
 
-Future<String> _handleStartJob(MethodCall call) async {
-  final payload = _decodePayload(call);
+/// A contract 2 job arrives as startJob(jobId, capability, {call: <envelope>})
+/// (docs/plugin-api.md 1.6, "Jobs in contract 2"); the answer goes back over
+/// jobProgress / jobComplete, not this method's return value.
+Future<String> _startJob(MethodCall call) async {
+  final payload = _decode(call);
   final jobId = payload['jobId'] as String;
-  final rawArgs = payload['args'];
-  if (rawArgs is Map<String, dynamic> && rawArgs['call'] is String) {
-    final envelope = jsonDecode(rawArgs['call'] as String) as Map<String, dynamic>;
-    unawaited(_runV2Job(jobId, envelope));
+  final raw = _map(payload['args'])['call'];
+  if (raw is! String) {
+    unawaited(_complete(jobId, ok: false, error: 'Missing job envelope'));
     return jsonEncode({'ok': true});
   }
-  final args = (rawArgs as Map<String, dynamic>?) ?? const {};
-  // Fire-and-forget from this handler's own point of view: the real
-  // answer goes back over "jobProgress"/"jobComplete" (matching
-  // FlutterDroidtopPlugin.startJob's own contract, docs/SPEC.md 12a),
-  // not this method's return value.
-  unawaited(_runDownloadJob(jobId, args));
+  unawaited(_runJob(jobId, jsonDecode(raw) as Map<String, dynamic>));
   return jsonEncode({'ok': true});
 }
 
-/// Runs a contract 2 action that the host routed through startJob. The
-/// envelope is the same one used by handle; source jobs additionally carry
-/// the resolved destination in their host-owned context.
-Future<void> _runV2Job(
-  String jobId,
-  Map<String, dynamic> envelope,
-) async {
+Future<String> _cancelJob(MethodCall call) async {
+  final jobId = _decode(call)['jobId'] as String?;
+  _running[jobId]?.cancel();
+  return jsonEncode({'ok': true});
+}
+
+Future<void> _runJob(String jobId, Map<String, dynamic> envelope) async {
   try {
     if (envelope['contract'] != 2) {
-      await _reportComplete(jobId, {
-        'ok': false,
-        'error': 'Unsupported contract',
-      });
-      return;
+      return _complete(jobId, ok: false, error: 'Unsupported contract');
     }
     final point = envelope['point'] as String?;
     final op = envelope['op'] as String?;
-    final args = (envelope['args'] as Map<String, dynamic>?) ?? const {};
-
+    final args = _map(envelope['args']);
     if (point == 'ui.settings' && op == 'downloadIndex') {
-      final db = RomDatabaseService();
-      var progressReports = Future<void>.value();
-      await db.downloadDatabase(onProgress: (progress) {
-        final percent = (progress * 100).round().clamp(0, 100).toInt();
-        progressReports = progressReports.then((_) =>
-            _reportProgress(jobId, percent, 'Downloading game index'));
-      });
-      await progressReports;
-      await _reportComplete(jobId, {
-        'ok': true,
-        'values': {'message': 'Game index downloaded'},
-      });
-      return;
+      return await _downloadIndex(jobId);
     }
-
     if (point == 'library.sources' && op == 'acquire') {
-      final ref = args['ref'];
-      if (ref is! Map<String, dynamic>) {
-        await _reportComplete(jobId, {
-          'ok': false,
-          'error': 'Missing game reference',
-        });
-        return;
-      }
-      final context = (args['context'] as Map<String, dynamic>?) ?? const {};
-      final destinationPath = context['destination'] as String?;
-      if (destinationPath == null || destinationPath.isEmpty) {
-        await _reportComplete(jobId, {
-          'ok': false,
-          'error': 'Missing destination',
-        });
-        return;
-      }
-      final values = (args['values'] as Map<String, dynamic>?) ?? const {};
-      final linkIndex = int.tryParse(values['link'] as String? ?? '') ?? 0;
-      await _runDownloadJob(jobId, {
-        'destinationPath': destinationPath,
-        'entry': jsonEncode(ref),
-        'linkIndex': linkIndex,
-      });
-      return;
+      return await _acquire(jobId, args);
     }
-
-    await _reportComplete(jobId, {
-      'ok': false,
-      'error': 'Unsupported job operation',
-    });
-  } catch (e) {
-    await _reportComplete(jobId, {'ok': false, 'error': e.toString()});
+    return _complete(jobId, ok: false, error: 'Unsupported job operation');
+  } catch (_) {
+    return _complete(jobId, ok: false, error: 'romgi could not complete the job');
+  } finally {
+    _running.remove(jobId);
   }
 }
 
-Future<void> _reportProgress(String jobId, int percent, String statusLine) {
+Future<void> _downloadIndex(String jobId) async {
+  final token = _running[jobId] = CancelToken();
+  var reports = Future<void>.value();
+  try {
+    await RomDatabaseService().downloadDatabase(
+      cancelToken: token,
+      onProgress: (progress) {
+        final percent = (progress * 100).round().clamp(0, 100).toInt();
+        reports = reports.then(
+          (_) => _progress(jobId, percent, 'Downloading game index'),
+        );
+      },
+    );
+    await reports;
+    await _complete(jobId, ok: true, values: {'message': 'Game index downloaded'});
+  } on DioException catch (e) {
+    await _complete(
+      jobId,
+      ok: false,
+      error: CancelToken.isCancel(e)
+          ? 'Cancelled'
+          : 'The game index could not be downloaded. Check your connection.',
+    );
+  }
+}
+
+/// Resolves the chosen link and hands droidtop a download descriptor. The
+/// transfer is droidtop's: it queues the URL through DownloadManager, shows
+/// it in Downloads and installs, and places the file in `context.destination`.
+Future<void> _acquire(String jobId, Map<String, dynamic> args) async {
+  final slug = _map(args['ref'])['slug'] as String?;
+  if (slug == null || slug.isEmpty) {
+    return _complete(jobId, ok: false, error: 'Missing game reference');
+  }
+  final entry = await RomDatabaseService().getEntry(slug);
+  if (entry == null) {
+    return _complete(jobId, ok: false, error: 'That game is not in the index');
+  }
+  final links = directLinks(entry);
+  final index = int.tryParse(_map(args['values'])['link'] as String? ?? '') ?? 0;
+  if (index < 0 || index >= links.length) {
+    return _complete(
+      jobId,
+      ok: false,
+      error: links.isEmpty
+          ? 'This game has no direct download'
+          : 'Pick a download source first',
+    );
+  }
+  await _complete(jobId, ok: true, values: {
+    'download': jsonEncode(acquireDownload(entry, links[index])),
+    'message': 'Queued ${entry.title}',
+  });
+}
+
+Future<void> _progress(String jobId, int percent, String statusLine) {
   return _channel.invokeMethod('jobProgress', jsonEncode({
     'jobId': jobId,
     'percent': percent,
@@ -433,88 +272,18 @@ Future<void> _reportProgress(String jobId, int percent, String statusLine) {
   }));
 }
 
-Future<void> _reportComplete(String jobId, Map<String, dynamic> result) {
+Future<void> _complete(
+  String jobId, {
+  required bool ok,
+  String? error,
+  Map<String, String> values = const {},
+}) {
   return _channel.invokeMethod('jobComplete', jsonEncode({
     'jobId': jobId,
-    'result': jsonEncode(result),
+    'result': jsonEncode({
+      'ok': ok,
+      if (error != null) 'error': error,
+      if (values.isNotEmpty) 'values': values,
+    }),
   }));
-}
-
-/// The one long-running job this v1 wrapper implements: acquire_content's
-/// download half. [args] carries a single [RomEntry] (as the same JSON
-/// shape `_search` returns, so droidtop's own caller round-trips a result
-/// it already has rather than re-fetching it), which link to use, and the
-/// real destination folder droidtop already resolved for this system.
-Future<void> _runDownloadJob(String jobId, Map<String, dynamic> args) async {
-  try {
-    final destinationPath = args['destinationPath'] as String?;
-    if (destinationPath == null || destinationPath.isEmpty) {
-      await _reportComplete(jobId, {'ok': false, 'error': 'missing destinationPath'});
-      return;
-    }
-    final entryJson = args['entry'] as String?;
-    if (entryJson == null) {
-      await _reportComplete(jobId, {'ok': false, 'error': 'missing entry'});
-      return;
-    }
-    final entry = RomEntry.fromJson(jsonDecode(entryJson) as Map<String, dynamic>);
-    final linkIndex = (args['linkIndex'] as num?)?.toInt() ?? 0;
-    if (linkIndex < 0 || linkIndex >= entry.links.length) {
-      await _reportComplete(jobId, {'ok': false, 'error': 'linkIndex out of range for this entry'});
-      return;
-    }
-    final link = entry.links[linkIndex];
-
-    final runtime = await _Runtime.forDestination(destinationPath);
-    final (addResult, task) = await runtime.downloads.addDownload(
-      slug: entry.slug,
-      title: entry.title,
-      platform: entry.platform,
-      boxartUrl: entry.boxartUrl,
-      link: link,
-    );
-    _jobTaskIds[jobId] = task.id;
-    if (addResult == AddDownloadResult.duplicate) {
-      await _reportComplete(jobId, {
-        'ok': true,
-        'values': {'taskId': task.id, 'duplicate': 'true'},
-      });
-      return;
-    }
-
-    final done = Completer<void>();
-    late final StreamSubscription<DownloadTask> sub;
-    sub = runtime.downloads.downloadStream.listen((update) async {
-      if (update.id != task.id) return;
-      switch (update.status) {
-        case DownloadStatus.downloading:
-        case DownloadStatus.extracting:
-          await _reportProgress(
-            jobId,
-            (update.progress * 100).round(),
-            update.status == DownloadStatus.extracting ? 'Extracting' : 'Downloading',
-          );
-        case DownloadStatus.completed:
-          await _reportComplete(jobId, {
-            'ok': true,
-            'values': {'taskId': update.id, 'filePath': update.filePath ?? ''},
-          });
-          await sub.cancel();
-          if (!done.isCompleted) done.complete();
-        case DownloadStatus.failed:
-          await _reportComplete(jobId, {
-            'ok': false,
-            'error': update.error ?? 'download failed',
-          });
-          await sub.cancel();
-          if (!done.isCompleted) done.complete();
-        case DownloadStatus.pending:
-        case DownloadStatus.paused:
-          break;
-      }
-    });
-    await done.future;
-  } catch (e) {
-    await _reportComplete(jobId, {'ok': false, 'error': e.toString()});
-  }
 }

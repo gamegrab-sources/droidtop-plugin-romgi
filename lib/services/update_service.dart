@@ -52,7 +52,7 @@ class AppRelease {
 }
 
 class UpdateService {
-  static const String _githubRepo = 'caprado/romgi';
+  static const String _githubRepo = 'bi0shacker001/romgi';
   static const String _releasesUrl =
       'https://api.github.com/repos/$_githubRepo/releases/latest';
 

@@ -166,7 +166,7 @@ Future<String> _detail(Map<String, dynamic> args) async {
 // DroidtopPlugin.cancelJob) can stop it.
 final Map<String, CancelToken> _running = {};
 
-/// A contract 2 job arrives as startJob(jobId, capability, {call: <envelope>})
+/// A contract 2 job arrives as `startJob(jobId, capability, {call: <envelope>})`
 /// (docs/plugin-api.md 1.6, "Jobs in contract 2"); the answer goes back over
 /// jobProgress / jobComplete, not this method's return value.
 Future<String> _startJob(MethodCall call) async {
@@ -190,7 +190,7 @@ Future<String> _cancelJob(MethodCall call) async {
 Future<void> _runJob(String jobId, Map<String, dynamic> envelope) async {
   try {
     if (envelope['contract'] != 2) {
-      return _complete(jobId, ok: false, error: 'Unsupported contract');
+      return await _complete(jobId, ok: false, error: 'Unsupported contract');
     }
     final point = envelope['point'] as String?;
     final op = envelope['op'] as String?;
@@ -201,7 +201,7 @@ Future<void> _runJob(String jobId, Map<String, dynamic> envelope) async {
     if (point == 'library.sources' && op == 'acquire') {
       return await _acquire(jobId, args);
     }
-    return _complete(jobId, ok: false, error: 'Unsupported job operation');
+    return await _complete(jobId, ok: false, error: 'Unsupported job operation');
   } catch (_) {
     return _complete(jobId, ok: false, error: 'romgi could not complete the job');
   } finally {

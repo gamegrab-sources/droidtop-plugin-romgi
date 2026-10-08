@@ -101,6 +101,58 @@ class SettingsScreen extends ConsumerWidget {
 
                 const Divider(height: 32),
 
+                _SectionHeader(title: '3DS Decryption'),
+
+                ListTile(
+                  leading: const Icon(Icons.key),
+                  title: const Text('boot9.bin'),
+                  subtitle: Text(
+                    settings.threeDsBoot9Path ??
+                        'Not set — required to decrypt 3DS games for '
+                            'emulators like Azahar that refuse to decrypt '
+                            'themselves',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: settings.threeDsBoot9Path != null
+                      ? IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () {
+                            ref
+                                .read(settingsProvider.notifier)
+                                .setThreeDsBoot9Path(null);
+                          },
+                        )
+                      : null,
+                  onTap: () => _pickBoot9File(context, ref),
+                ),
+
+                ListTile(
+                  leading: const Icon(Icons.vpn_key),
+                  title: const Text('seeddb.bin'),
+                  subtitle: Text(
+                    settings.threeDsSeeddbPath ??
+                        'Not set — only needed for the subset of 3DS games '
+                            'that use seed crypto (games released after a '
+                            'later system update)',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: settings.threeDsSeeddbPath != null
+                      ? IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () {
+                            ref
+                                .read(settingsProvider.notifier)
+                                .setThreeDsSeeddbPath(null);
+                          },
+                        )
+                      : null,
+                  onTap: () => _pickSeeddbFile(context, ref),
+                ),
+
+                const Divider(height: 32),
+
                 _SectionHeader(title: 'Debrid Service'),
                 const _DebridSection(),
 
@@ -412,10 +464,10 @@ class SettingsScreen extends ConsumerWidget {
                 ListTile(
                   leading: const Icon(Icons.code),
                   title: const Text('Source Code'),
-                  subtitle: const Text('github.com/caprado/romgi'),
+                  subtitle: const Text('github.com/bi0shacker001/romgi'),
                   trailing: const Icon(Icons.open_in_new),
                   onTap: () => launchUrl(
-                    Uri.parse('https://github.com/caprado/romgi'),
+                    Uri.parse('https://github.com/bi0shacker001/romgi'),
                     mode: LaunchMode.externalApplication,
                   ),
                 ),
@@ -550,6 +602,24 @@ class SettingsScreen extends ConsumerWidget {
       }
     }
   }
+
+  Future<void> _pickBoot9File(BuildContext context, WidgetRef ref) async {
+    final result = await FilePicker.platform.pickFiles();
+    final path = result?.files.single.path;
+
+    if (path != null) {
+      ref.read(settingsProvider.notifier).setThreeDsBoot9Path(path);
+    }
+  }
+
+  Future<void> _pickSeeddbFile(BuildContext context, WidgetRef ref) async {
+    final result = await FilePicker.platform.pickFiles();
+    final path = result?.files.single.path;
+
+    if (path != null) {
+      ref.read(settingsProvider.notifier).setThreeDsSeeddbPath(path);
+    }
+  }
 }
 
 class _SectionHeader extends StatelessWidget {
@@ -610,6 +680,7 @@ class _UpdateTile extends ConsumerWidget {
           trailing: _buildTrailingWidget(context, ref, updateState),
           onTap:
               updateState.status == UpdateStatus.idle ||
+                  updateState.status == UpdateStatus.upToDate ||
                   updateState.status == UpdateStatus.error
               ? () => ref.read(updateProvider.notifier).checkForUpdate()
               : null,
@@ -629,6 +700,10 @@ class _UpdateTile extends ConsumerWidget {
         return Icons.system_update;
       case UpdateStatus.checking:
         return Icons.refresh;
+      case UpdateStatus.upToDate:
+        return Icons.check_circle_outline;
+      case UpdateStatus.unavailable:
+        return Icons.update_disabled;
       case UpdateStatus.available:
         return Icons.download;
       case UpdateStatus.downloading:
@@ -658,6 +733,10 @@ class _UpdateTile extends ConsumerWidget {
         return 'Check for Updates';
       case UpdateStatus.checking:
         return 'Checking for Updates...';
+      case UpdateStatus.upToDate:
+        return 'Up to Date';
+      case UpdateStatus.unavailable:
+        return 'Updates Not Available';
       case UpdateStatus.available:
         return 'Update Available';
       case UpdateStatus.downloading:
@@ -675,6 +754,10 @@ class _UpdateTile extends ConsumerWidget {
         return 'Tap to check for new versions';
       case UpdateStatus.checking:
         return 'Please wait...';
+      case UpdateStatus.upToDate:
+        return 'This is the newest build. Tap to check again';
+      case UpdateStatus.unavailable:
+        return 'This build has no update channel; whatever installed it updates it';
       case UpdateStatus.available:
         return 'Version ${state.availableUpdate?.version} is available';
       case UpdateStatus.downloading:
@@ -719,6 +802,8 @@ class _UpdateTile extends ConsumerWidget {
           icon: const Icon(Icons.refresh),
           onPressed: () => ref.read(updateProvider.notifier).checkForUpdate(),
         );
+      case UpdateStatus.unavailable:
+        return null;
       default:
         return const Icon(Icons.chevron_right);
     }

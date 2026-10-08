@@ -3,6 +3,8 @@ package com.caprado.romgi
 import android.content.Intent
 import android.webkit.CookieManager
 import androidx.core.content.FileProvider
+import com.caprado.romgi.ncch_decrypt.NcchDecryptHostApi
+import com.caprado.romgi.ncch_decrypt.NcchDecryptServiceImpl
 import com.caprado.romgi.seven_zip.SevenZipHostApi
 import com.caprado.romgi.seven_zip.SevenZipServiceImpl
 import com.caprado.romgi.torrent.TorrentHostApi
@@ -28,6 +30,8 @@ class MainActivity : FlutterActivity() {
             flutterEngine.dartExecutor.binaryMessenger,
         )
         SevenZipHostApi.setUp(flutterEngine.dartExecutor.binaryMessenger, sevenZipService)
+
+        NcchDecryptHostApi.setUp(flutterEngine.dartExecutor.binaryMessenger, NcchDecryptServiceImpl())
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, OPEN_CHANNEL)
             .setMethodCallHandler { call, result ->
@@ -58,6 +62,14 @@ class MainActivity : FlutterActivity() {
                     } catch (t: Throwable) {
                         result.error("OPEN_FAILED", t.message, null)
                     }
+                } else if (call.method == "getNativeLibraryDir") {
+                    // pkg2zip is bundled as jniLibs/<abi>/libpkg2zip.so (a real
+                    // executable, not a loadable native library) so Android's APK
+                    // packaging places it here; Dart invokes it directly as a
+                    // subprocess rather than through JNI. See
+                    // src/main/cpp/CMakeLists.txt and
+                    // lib/services/vita_decrypt_service.dart.
+                    result.success(applicationInfo.nativeLibraryDir)
                 } else if (call.method == "getWebViewCookies") {
                     val url = call.argument<String>("url")
                     if (url == null) {

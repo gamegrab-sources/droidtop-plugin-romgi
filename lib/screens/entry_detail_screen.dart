@@ -126,9 +126,17 @@ class _EntryDetailContentState extends ConsumerState<_EntryDetailContent> {
     required bool iaLoggedIn,
     required bool torrentsDisabled,
   }) {
+    // The Vita license (zRIF) is fetched automatically alongside the pkg
+    // when needed (see DownloadService._maybeHandleVitaLicense) — hide it
+    // from the link list so it doesn't show up as a confusing standalone
+    // download option.
+    final filtered = widget.entry.platform == 'psv'
+        ? links.where((l) => l.type != 'ZRIF string').toList()
+        : links;
+
     final resolver = LinkResolver(sourcePriority: kKnownSourcePriority);
     final ranked = resolver.rank(
-      links,
+      filtered,
       LinkResolverPrefs(
         isIaLoggedIn: iaLoggedIn,
         torrentsDisabled: torrentsDisabled,

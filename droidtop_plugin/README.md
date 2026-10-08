@@ -49,6 +49,18 @@ The detail view lists only **direct HTTP(S) links**, and counts the rest as
   storage and web view cookies, which the headless engine does not use.
 - **Debrid**: its account is configured in the app's own screen (`ui.main`);
   resolving torrents through it is not wired into `acquire` yet.
+- **The app's own after-download steps**: 3DS decryption (boot9 and seeddb
+  from romgi's settings), Vita licenses and pkg2zip, and archive extraction
+  run only in romgi's own downloader (`ui.main`). A droidtop download is
+  placed as the source served it, because the acquire reply has no step that
+  runs after droidtop has placed the file.
+
+The extensions droidtop's acquire contract needs for these (a post-download
+step the plugin supplies, host unpack, several files per result, readable file
+names, resumable plugin-run transfers) are proposed in Droidtop/tracker#355,
+and the library pickup bug found on the way (a download that finishes after
+its page is closed is not scanned) is Droidtop/tracker#354. This wrapper adopts
+each extension as it lands.
 
 Closing these needs romgi's two Android services registered through a Flutter
 plugin package that `GeneratedPluginRegistrant` calls (droidtop's engine host
@@ -95,7 +107,10 @@ categories when that lands.
   `bi0shacker001`, independent of droidtop's official trust ring) and packs
   `<id>.droidplugin.tar.xz` (`lib`, `dex`, `flutter_assets`).
 - `manifest.template.json` -- the shared manifest shape; `build.sh` fills in
-  `id`, `label`, `runtimeVersion` and `payload`.
+  `id`, `label`, `runtimeVersion` and `payload`, and in CI stamps the
+  declared `version` as `<declared>-<run number>` (`DROIDTOP_PLUGIN_BUILD`,
+  Droidtop/tracker#126), so no two builds publish the same version string.
+  Bump the declared version with every change to the wrapper or the line.
 
 The runtime pin in `build.sh` (`RUNTIME_VERSION`) and the Flutter SDK in the CI
 job must stay equal to droidtop's `flutter-runtimes.json`; a different engine

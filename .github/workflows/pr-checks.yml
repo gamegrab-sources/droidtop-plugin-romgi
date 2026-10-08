@@ -106,6 +106,8 @@ jobs:
 
       - name: Build the plugin bundle (unsigned payload + manifest)
         if: steps.has_wrapper.outputs.present == 'true'
+        env:
+          DROIDTOP_PLUGIN_BUILD: ${{ github.run_number }}
         run: |
           flutter config --no-analytics >/dev/null
           ./droidtop_plugin/build.sh

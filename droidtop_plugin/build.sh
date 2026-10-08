@@ -100,6 +100,14 @@ payload.sort(key=lambda e: e["path"])
 
 manifest = json.load(open("droidtop_plugin/manifest.template.json"))
 manifest["id"] = plugin_id
+# The published version is <declared>-<CI run> (Droidtop/tracker#126), so two
+# builds of one declared version are never shown under the same string. A
+# build outside CI keeps the declared version alone.
+build = os.environ.get("DROIDTOP_PLUGIN_BUILD", "").strip()
+if build:
+    if not build.isdigit():
+        sys.exit(f"DROIDTOP_PLUGIN_BUILD must be a CI run number, got {build!r}")
+    manifest["version"] = f'{manifest["version"]}-{build}'
 manifest["label"] = f"romgi ({line})"
 manifest["runtimeVersion"] = runtime_version
 manifest["payload"] = payload

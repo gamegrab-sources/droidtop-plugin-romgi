@@ -31,7 +31,7 @@ class RomEntry {
       romId: json['rom_id'] as String?,
       title: json['title'] as String,
       platform: json['platform'] as String,
-      boxartUrl: json['boxart_url'] as String?,
+      boxartUrl: (json['boxart_url'] ?? json['boxart']) as String?,
       raGameId: json['ra_game_id'] as int?,
       raNumAchievements: json['ra_num_achievements'] as int?,
       regions:
@@ -55,7 +55,7 @@ class RomEntry {
       'rom_id': romId,
       'title': title,
       'platform': platform,
-      'boxart': boxartUrl,
+      'boxart_url': boxartUrl,
       'ra_game_id': raGameId,
       'ra_num_achievements': raNumAchievements,
       'regions': regions,

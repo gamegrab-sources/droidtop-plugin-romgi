@@ -120,6 +120,58 @@ class SettingsScreen extends ConsumerWidget {
 
                 const Divider(height: 32),
 
+                _SectionHeader(title: '3DS Decryption'),
+
+                ListTile(
+                  leading: const Icon(Icons.key),
+                  title: const Text('boot9.bin'),
+                  subtitle: Text(
+                    settings.threeDsBoot9Path ??
+                        'Not set — required to decrypt 3DS games for '
+                            'emulators like Azahar that refuse to decrypt '
+                            'themselves',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: settings.threeDsBoot9Path != null
+                      ? IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () {
+                            ref
+                                .read(settingsProvider.notifier)
+                                .setThreeDsBoot9Path(null);
+                          },
+                        )
+                      : null,
+                  onTap: () => _pickBoot9File(context, ref),
+                ),
+
+                ListTile(
+                  leading: const Icon(Icons.vpn_key),
+                  title: const Text('seeddb.bin'),
+                  subtitle: Text(
+                    settings.threeDsSeeddbPath ??
+                        'Not set — only needed for the subset of 3DS games '
+                            'that use seed crypto (games released after a '
+                            'later system update)',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: settings.threeDsSeeddbPath != null
+                      ? IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () {
+                            ref
+                                .read(settingsProvider.notifier)
+                                .setThreeDsSeeddbPath(null);
+                          },
+                        )
+                      : null,
+                  onTap: () => _pickSeeddbFile(context, ref),
+                ),
+
+                const Divider(height: 32),
+
                 _SectionHeader(title: 'Debrid Service'),
                 const _DebridSection(),
 
@@ -207,74 +259,114 @@ class SettingsScreen extends ConsumerWidget {
                         final customPath = settings.platformPaths[platform.id];
                         final extractEnabled =
                             settings.shouldExtractForPlatform(platform.id);
-                        return ListTile(
-                          leading: const Icon(Icons.folder_outlined),
-                          title: Text(
-                            PlatformNames.getDisplayName(platform.id),
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                customPath ?? 'Using default',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            ListTile(
+                              leading: const Icon(Icons.folder_outlined),
+                              title: Text(
+                                PlatformNames.getDisplayName(platform.id),
                               ),
-                              const SizedBox(height: 4),
-                              Row(
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  SizedBox(
-                                    height: 24,
-                                    width: 36,
-                                    child: FittedBox(
-                                      child: Switch(
-                                        value: extractEnabled,
-                                        onChanged: settings.autoExtractDisabled
-                                            ? null
-                                            : (value) {
-                                                ref
-                                                    .read(settingsProvider
-                                                        .notifier)
-                                                    .setPlatformExtractDisabled(
-                                                        platform.id, !value);
-                                              },
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
                                   Text(
-                                    'Auto-extract',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodySmall
-                                        ?.copyWith(
-                                          color: settings.autoExtractDisabled
-                                              ? Colors.grey
-                                              : null,
+                                    customPath ?? 'Using default',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      SizedBox(
+                                        height: 24,
+                                        width: 36,
+                                        child: FittedBox(
+                                          child: Switch(
+                                            value: extractEnabled,
+                                            onChanged: settings
+                                                    .autoExtractDisabled
+                                                ? null
+                                                : (value) {
+                                                    ref
+                                                        .read(settingsProvider
+                                                            .notifier)
+                                                        .setPlatformExtractDisabled(
+                                                            platform.id,
+                                                            !value);
+                                                  },
+                                          ),
                                         ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'Auto-extract',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: settings
+                                                      .autoExtractDisabled
+                                                  ? Colors.grey
+                                                  : null,
+                                            ),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
-                            ],
-                          ),
-                          trailing: customPath != null
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear),
-                                  onPressed: () {
-                                    ref
-                                        .read(settingsProvider.notifier)
-                                        .setPlatformPath(platform.id, null);
-                                    storage.setPlatformPath(platform.id, null);
-                                  },
-                                )
-                              : const Icon(Icons.chevron_right),
-                          isThreeLine: true,
-                          onTap: () => _pickFolder(
-                            context,
-                            ref,
-                            storage,
-                            platformId: platform.id,
-                          ),
+                              trailing: customPath != null
+                                  ? IconButton(
+                                      icon: const Icon(Icons.clear),
+                                      onPressed: () {
+                                        ref
+                                            .read(settingsProvider.notifier)
+                                            .setPlatformPath(
+                                                platform.id, null);
+                                        storage.setPlatformPath(
+                                            platform.id, null);
+                                      },
+                                    )
+                                  : const Icon(Icons.chevron_right),
+                              onTap: () => _pickFolder(
+                                context,
+                                ref,
+                                storage,
+                                platformId: platform.id,
+                              ),
+                            ),
+                            // A separate ListTile, not nested inside the one
+                            // above's subtitle — that ListTile already owns
+                            // the whole row's tap area (for _pickFolder), so
+                            // a nested InkWell there loses the gesture arena
+                            // and is never actually selectable.
+                            if (platform.id == 'psv')
+                              ListTile(
+                                dense: true,
+                                contentPadding: const EdgeInsets.only(
+                                  left: 72,
+                                  right: 16,
+                                ),
+                                leading: Icon(
+                                  Icons.videogame_asset,
+                                  size: 20,
+                                  color: Theme.of(context).colorScheme.outline,
+                                ),
+                                title: Text(
+                                  'Downloads: ${_getVitaModeName(settings.vitaDownloadMode)}',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                                trailing: const Icon(
+                                  Icons.chevron_right,
+                                  size: 20,
+                                ),
+                                onTap: () => _showVitaModePicker(
+                                  context,
+                                  ref,
+                                  settings.vitaDownloadMode,
+                                ),
+                              ),
+                          ],
                         );
                       }).toList(),
                     );
@@ -386,10 +478,10 @@ class SettingsScreen extends ConsumerWidget {
                 ListTile(
                   leading: const Icon(Icons.code),
                   title: const Text('Source Code'),
-                  subtitle: const Text('github.com/caprado/romgi'),
+                  subtitle: const Text('github.com/bi0shacker001/romgi'),
                   trailing: const Icon(Icons.open_in_new),
                   onTap: () => launchUrl(
-                    Uri.parse('https://github.com/caprado/romgi'),
+                    Uri.parse('https://github.com/bi0shacker001/romgi'),
                     mode: LaunchMode.externalApplication,
                   ),
                 ),
@@ -409,6 +501,65 @@ class SettingsScreen extends ConsumerWidget {
       case AppThemeMode.dark:
         return 'Dark';
     }
+  }
+
+  String _getVitaModeName(VitaDownloadMode mode) {
+    switch (mode) {
+      case VitaDownloadMode.pkgOnly:
+        return 'PKG only';
+      case VitaDownloadMode.pkgWithLicense:
+        return 'PKG + license';
+      case VitaDownloadMode.decryptToZip:
+        return 'Decrypt to zip';
+    }
+  }
+
+  String _getVitaModeDescription(VitaDownloadMode mode) {
+    switch (mode) {
+      case VitaDownloadMode.pkgOnly:
+        return 'Download the pkg as-is';
+      case VitaDownloadMode.pkgWithLicense:
+        return 'Also fetch the license and save it next to the pkg '
+            '(same name, .rif) — ready for Vita3K to import';
+      case VitaDownloadMode.decryptToZip:
+        return 'Fetch the license and decrypt the pkg to an install-ready '
+            'zip using the bundled pkg2zip';
+    }
+  }
+
+  void _showVitaModePicker(
+    BuildContext context,
+    WidgetRef ref,
+    VitaDownloadMode currentMode,
+  ) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Vita Downloads'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: VitaDownloadMode.values.map((mode) {
+            final isSelected = mode == currentMode;
+            return ListTile(
+              leading: Icon(
+                isSelected
+                    ? Icons.radio_button_checked
+                    : Icons.radio_button_unchecked,
+                color: isSelected
+                    ? Theme.of(dialogContext).colorScheme.primary
+                    : null,
+              ),
+              title: Text(_getVitaModeName(mode)),
+              subtitle: Text(_getVitaModeDescription(mode)),
+              onTap: () {
+                ref.read(settingsProvider.notifier).setVitaDownloadMode(mode);
+                Navigator.pop(dialogContext);
+              },
+            );
+          }).toList(),
+        ),
+      ),
+    );
   }
 
   void _showThemePicker(
@@ -463,6 +614,24 @@ class SettingsScreen extends ConsumerWidget {
         ref.read(settingsProvider.notifier).setDefaultDownloadPath(result);
         storage.setCustomDownloadPath(result);
       }
+    }
+  }
+
+  Future<void> _pickBoot9File(BuildContext context, WidgetRef ref) async {
+    final result = await FilePicker.platform.pickFiles();
+    final path = result?.files.single.path;
+
+    if (path != null) {
+      ref.read(settingsProvider.notifier).setThreeDsBoot9Path(path);
+    }
+  }
+
+  Future<void> _pickSeeddbFile(BuildContext context, WidgetRef ref) async {
+    final result = await FilePicker.platform.pickFiles();
+    final path = result?.files.single.path;
+
+    if (path != null) {
+      ref.read(settingsProvider.notifier).setThreeDsSeeddbPath(path);
     }
   }
 }
@@ -525,6 +694,7 @@ class _UpdateTile extends ConsumerWidget {
           trailing: _buildTrailingWidget(context, ref, updateState),
           onTap:
               updateState.status == UpdateStatus.idle ||
+                  updateState.status == UpdateStatus.upToDate ||
                   updateState.status == UpdateStatus.error
               ? () => ref.read(updateProvider.notifier).checkForUpdate()
               : null,
@@ -544,6 +714,10 @@ class _UpdateTile extends ConsumerWidget {
         return Icons.system_update;
       case UpdateStatus.checking:
         return Icons.refresh;
+      case UpdateStatus.upToDate:
+        return Icons.check_circle_outline;
+      case UpdateStatus.unavailable:
+        return Icons.update_disabled;
       case UpdateStatus.available:
         return Icons.download;
       case UpdateStatus.downloading:
@@ -573,6 +747,10 @@ class _UpdateTile extends ConsumerWidget {
         return 'Check for Updates';
       case UpdateStatus.checking:
         return 'Checking for Updates...';
+      case UpdateStatus.upToDate:
+        return 'Up to Date';
+      case UpdateStatus.unavailable:
+        return 'Updates Not Available';
       case UpdateStatus.available:
         return 'Update Available';
       case UpdateStatus.downloading:
@@ -590,6 +768,10 @@ class _UpdateTile extends ConsumerWidget {
         return 'Tap to check for new versions';
       case UpdateStatus.checking:
         return 'Please wait...';
+      case UpdateStatus.upToDate:
+        return 'This is the newest build. Tap to check again';
+      case UpdateStatus.unavailable:
+        return 'This build has no update channel; whatever installed it updates it';
       case UpdateStatus.available:
         return 'Version ${state.availableUpdate?.version} is available';
       case UpdateStatus.downloading:
@@ -634,6 +816,8 @@ class _UpdateTile extends ConsumerWidget {
           icon: const Icon(Icons.refresh),
           onPressed: () => ref.read(updateProvider.notifier).checkForUpdate(),
         );
+      case UpdateStatus.unavailable:
+        return null;
       default:
         return const Icon(Icons.chevron_right);
     }

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
@@ -14,6 +15,7 @@ import 'database_service.dart';
 import 'debrid_service.dart';
 import 'host_adapter.dart';
 import 'link_resolver.dart';
+import 'ncch_decrypt_service.dart';
 import 'notification_service.dart';
 import 'playlist_writer.dart';
 import 'rom_database_service.dart';
@@ -22,8 +24,48 @@ import 'storage_service.dart';
 import 'torrent_info.dart';
 import 'torrent_magnet.dart';
 import 'torrent_service.dart';
+import 'vita_decrypt_service.dart';
+import 'zrif_codec.dart';
 
 enum AddDownloadResult { added, duplicate }
+
+/// How a PS Vita `.pkg` download is finalized once it completes.
+enum VitaDownloadMode {
+  /// Today's behavior: keep the raw `.pkg` as-is.
+  pkgOnly,
+
+  /// Fetch the sibling zRIF license link and save it as a same-named
+  /// `.rif` next to the pkg (no subfolder), ready for Vita3K to import
+  /// without decryption.
+  pkgWithLicense,
+
+  /// Fetch the zRIF license link and decrypt the pkg to a NoNpDrm-format
+  /// zip via the bundled pkg2zip binary.
+  decryptToZip,
+}
+
+/// A Vita license, in whichever form we already have it — either a zRIF
+/// string (freshly fetched, or pasted by the user) or the path to an
+/// already-decoded `.rif`/`work.bin` file on disk. Keeping both possible
+/// forms around lets callers that already have a `.rif` file hand it
+/// straight to pkg2zip (which accepts either directly) instead of
+/// round-tripping it through a re-encoded zRIF string just to have
+/// pkg2zip decode it straight back.
+class _VitaLicense {
+  final String? zrif;
+  final String? rifPath;
+
+  const _VitaLicense.fromZrif(String this.zrif) : rifPath = null;
+  const _VitaLicense.fromRifFile(String this.rifPath) : zrif = null;
+
+  /// The raw 512-byte rif, decoding from [zrif] if this wasn't already
+  /// backed by an existing `.rif` file.
+  Future<Uint8List> rifBytes() async {
+    final path = rifPath;
+    if (path != null) return File(path).readAsBytes();
+    return ZrifCodec.decodeToRif(zrif!);
+  }
+}
 
 /// Outcome of enqueuing a whole disc group at once.
 class DiscGroupDownloadResult {
@@ -51,10 +93,14 @@ class DownloadService {
   final HostAdapterRegistry _adapters;
   final TorrentService _torrents;
   final SevenZipService _sevenZip;
+  final NcchDecryptService _ncchDecrypt;
   final DebridService? _debrid;
   late final PlaylistWriter _playlistWriter;
   bool Function(String platform) shouldExtractForPlatform = (_) => true;
   bool Function() getPs3DownloadRap = () => false;
+  VitaDownloadMode Function() getVitaDownloadMode = () => VitaDownloadMode.pkgOnly;
+  String? Function() getThreeDsBoot9Path = () => null;
+  String? Function() getThreeDsSeeddbPath = () => null;
   final Dio _dio;
   Dio? _nativeDio;
   final _uuid = const Uuid();
@@ -100,6 +146,7 @@ class DownloadService {
     required HostAdapterRegistry adapters,
     required TorrentService torrents,
     required SevenZipService sevenZip,
+    NcchDecryptService? ncchDecrypt,
     DebridService? debrid,
     Dio? dio,
   })  : _db = db,
@@ -109,6 +156,7 @@ class DownloadService {
         _adapters = adapters,
         _torrents = torrents,
         _sevenZip = sevenZip,
+        _ncchDecrypt = ncchDecrypt ?? NcchDecryptService(),
         _debrid = debrid,
         _dio = dio ?? Dio() {
     _playlistWriter = PlaylistWriter(
@@ -585,6 +633,10 @@ class DownloadService {
       // Retry logic for transient SSL/connection errors
       const maxRetries = 3;
       var retryCount = 0;
+      // Catalog sizes can be approximations (IA lists human-readable
+      // sizes), so completion is verified against the server's
+      // Content-Length instead.
+      var serverExpectedSize = 0;
       while (true) {
         try {
           // IA redirects downloads to CDN nodes (e.g. dn721009.ca.archive.org).
@@ -622,6 +674,9 @@ class DownloadService {
               final actualReceived = resumeOffset + received;
               final actualTotal =
                   total > 0 ? resumeOffset + total : task.link.size;
+              if (total > 0) {
+                serverExpectedSize = resumeOffset + total;
+              }
               final progress =
                   actualTotal > 0 ? actualReceived / actualTotal : 0.0;
 
@@ -698,13 +753,13 @@ class DownloadService {
       }
 
       final finalSize = await File(downloadPath).length();
-      if (task.link.size > 0 && finalSize != task.link.size) {
+      if (serverExpectedSize > 0 && finalSize != serverExpectedSize) {
         try {
           await File(downloadPath).delete();
         } catch (_) {}
         updatedTask = updatedTask.copyWith(
           status: DownloadStatus.failed,
-          error: 'Download incomplete ($finalSize of ${task.link.size} bytes)',
+          error: 'Download incomplete ($finalSize of $serverExpectedSize bytes)',
         );
         await _db.updateDownload(updatedTask);
         _downloadController.add(updatedTask);
@@ -934,6 +989,7 @@ class DownloadService {
       try {
         final extractedPath = await _extractArchive(downloadPath, task.platform);
         await File(downloadPath).delete();
+        await _maybeDecrypt3ds(extractedPath, task.platform);
         updatedTask = updatedTask.copyWith(
           status: DownloadStatus.completed,
           progress: 1.0,
@@ -948,7 +1004,10 @@ class DownloadService {
         );
       }
     } else {
-      final finalPath = await _maybeHandlePs3License(updatedTask, downloadPath);
+      final finalPath = await _maybeHandleVitaLicense(
+        updatedTask,
+        await _maybeHandlePs3License(updatedTask, downloadPath),
+      );
       updatedTask = updatedTask.copyWith(
         status: DownloadStatus.completed,
         progress: 1.0,
@@ -1033,12 +1092,16 @@ class DownloadService {
         try {
           finalPath = await _extractArchive(destPath, task.platform);
           await File(destPath).delete();
+          await _maybeDecrypt3ds(finalPath, task.platform);
         } catch (_) {
           await _failTask(task, 'Extraction failed — the archive may be corrupt');
           return;
         }
       } else if (existingPath == destPath) {
-        finalPath = await _maybeHandlePs3License(task, destPath);
+        finalPath = await _maybeHandleVitaLicense(
+          task,
+          await _maybeHandlePs3License(task, destPath),
+        );
       }
       final completed = task.copyWith(
         status: DownloadStatus.completed,
@@ -1222,6 +1285,7 @@ class DownloadService {
       try {
         finalPath = await _extractArchive(dest, task.platform);
         await File(dest).delete();
+        await _maybeDecrypt3ds(finalPath, task.platform);
       } catch (_) {
         await _failTorrentTask(
           task,
@@ -1231,7 +1295,10 @@ class DownloadService {
         return;
       }
     } else {
-      finalPath = await _maybeHandlePs3License(task, dest);
+      finalPath = await _maybeHandleVitaLicense(
+        task,
+        await _maybeHandlePs3License(task, dest),
+      );
     }
 
     final completed = task.copyWith(
@@ -1563,6 +1630,331 @@ class DownloadService {
     } catch (_) {
       // Best-effort — the raw pkg is still a usable download on its own.
       return pkgPath;
+    }
+  }
+
+  bool _isVitaPkg(DownloadTask task) =>
+      task.platform == 'psv' &&
+      task.link.filename.toLowerCase().endsWith('.pkg');
+
+  /// Applies the configured [VitaDownloadMode] to a just-downloaded Vita
+  /// pkg, if applicable. Returns the path the task should record as its
+  /// final [DownloadTask.filePath] — unchanged from [pkgPath] if the mode
+  /// is [VitaDownloadMode.pkgOnly], the task isn't a Vita pkg, or the
+  /// license fetch/decrypt fails (the raw pkg is always left usable).
+  Future<String> _maybeHandleVitaLicense(DownloadTask task, String pkgPath) async {
+    final mode = getVitaDownloadMode();
+    if (mode == VitaDownloadMode.pkgOnly || !_isVitaPkg(task)) return pkgPath;
+
+    Future<String> bail(String reason) async {
+      await _notifications.showNonFatalIssue(
+        title: 'Vita license not applied — kept as .pkg',
+        message: '${task.title}: $reason',
+      );
+      return pkgPath;
+    }
+
+    try {
+      final zrif = await _fetchVitaZrif(task);
+      return await _applyVitaLicense(
+        task,
+        pkgPath,
+        mode,
+        _VitaLicense.fromZrif(zrif),
+      );
+    } catch (e) {
+      // Best-effort — the raw pkg is still a usable download on its own.
+      return bail(e.toString());
+    }
+  }
+
+  /// The NoPayStation page for [task]'s title, if the catalog has a ZRIF
+  /// link for it — lets the UI send the user to go copy the zRIF
+  /// themselves when our own fetch of it keeps 404ing (upstream's mirror
+  /// of the raw ZRIF file, not the NoPayStation page itself, is what's
+  /// unreliable).
+  Future<String?> getVitaLicenseSourceUrl(DownloadTask task) async {
+    final entry = await _romDb.getEntry(task.slug);
+    final licenseLink =
+        entry?.links.where((l) => l.type == 'ZRIF string').firstOrNull;
+    final sourceUrl = licenseLink?.sourceUrl;
+    return (sourceUrl == null || sourceUrl.isEmpty) ? null : sourceUrl;
+  }
+
+  // NoPayStation's own public TSVs — the authoritative source our catalog
+  // build (db/sources/nopaystation/scraper.py) reads from in the first
+  // place. Content ID -> zRIF, cached in memory since these are a few MB
+  // each and change rarely.
+  static const _npsZrifTsvUrls = [
+    'https://nopaystation.com/tsv/PSV_GAMES.tsv',
+    'https://nopaystation.com/tsv/PSV_DEMOS.tsv',
+    'https://nopaystation.com/tsv/PSV_DLCS.tsv',
+  ];
+  Map<String, String>? _npsZrifCache;
+  DateTime? _npsZrifCacheAt;
+
+  Future<Map<String, String>> _loadNoPayStationZrifs() async {
+    final cachedAt = _npsZrifCacheAt;
+    final cache = _npsZrifCache;
+    if (cache != null &&
+        cachedAt != null &&
+        DateTime.now().difference(cachedAt) < const Duration(hours: 12)) {
+      return cache;
+    }
+
+    final merged = <String, String>{};
+    for (final url in _npsZrifTsvUrls) {
+      try {
+        final response = await _dio.get<String>(
+          url,
+          options: Options(responseType: ResponseType.plain),
+        );
+        final body = response.data;
+        if (body == null) continue;
+        merged.addAll(_parseNpsZrifTsv(body));
+      } catch (_) {
+        // Best-effort — a partial merge (or the stale cache) still helps.
+      }
+    }
+
+    if (merged.isNotEmpty) {
+      _npsZrifCache = merged;
+      _npsZrifCacheAt = DateTime.now();
+      return merged;
+    }
+    return cache ?? {};
+  }
+
+  Map<String, String> _parseNpsZrifTsv(String body) {
+    final lines = body.split('\n');
+    if (lines.isEmpty) return {};
+    final header = lines.first.split('\t');
+    final contentIdIdx = header.indexOf('Content ID');
+    final zrifIdx = header.indexOf('zRIF');
+    if (contentIdIdx == -1 || zrifIdx == -1) return {};
+
+    final result = <String, String>{};
+    for (final line in lines.skip(1)) {
+      if (line.trim().isEmpty) continue;
+      final cols = line.split('\t');
+      if (cols.length <= contentIdIdx || cols.length <= zrifIdx) continue;
+      final contentId = cols[contentIdIdx].trim();
+      final zrif = cols[zrifIdx].trim();
+      if (contentId.isNotEmpty && zrif.isNotEmpty) {
+        result[contentId] = zrif;
+      }
+    }
+    return result;
+  }
+
+  /// Fetches the zRIF license string for [task] from its catalog entry.
+  /// Tries NoPayStation's own public TSVs first (authoritative, and not
+  /// subject to the GitHub-hosted per-title mirror's staleness/404s), then
+  /// falls back to the catalog's stored link URL. Throws a [StateError]
+  /// with a user-facing message if neither works.
+  Future<String> _fetchVitaZrif(DownloadTask task) async {
+    final entry = await _romDb.getEntry(task.slug);
+    final licenseLink =
+        entry?.links.where((l) => l.type == 'ZRIF string').firstOrNull;
+    if (licenseLink == null) {
+      throw StateError('no ZRIF license link found in the catalog for this title');
+    }
+
+    // licenseLink.filename is the PSN content ID (see add_psv_links in
+    // db/sources/nopaystation/scraper.py) — the same key NoPayStation's
+    // TSVs are indexed by.
+    final contentId = licenseLink.filename;
+    if (contentId.isNotEmpty) {
+      final npsZrifs = await _loadNoPayStationZrifs();
+      final npsZrif = npsZrifs[contentId];
+      if (npsZrif != null && npsZrif.isNotEmpty) {
+        return npsZrif;
+      }
+    }
+
+    try {
+      final response = await _dio.get<String>(
+        licenseLink.url,
+        options: Options(responseType: ResponseType.plain),
+      );
+      final zrif = response.data?.trim();
+      if (zrif == null || zrif.isEmpty) {
+        throw StateError('license link returned an empty response');
+      }
+      return zrif;
+    } on StateError {
+      rethrow;
+    } catch (_) {
+      throw StateError(
+        'NoPayStation lookup and catalog mirror both failed for this title',
+      );
+    }
+  }
+
+  Future<String> _applyVitaLicense(
+    DownloadTask task,
+    String pkgPath,
+    VitaDownloadMode mode,
+    _VitaLicense license,
+  ) async {
+    switch (mode) {
+      case VitaDownloadMode.pkgWithLicense:
+        // Flat, no subfolder: <title>.pkg + <title>.rif sitting side by
+        // side — a per-game subfolder was only ever needed because the
+        // license had to be named the fixed "work.bin", which can't
+        // coexist with other titles in the same flat directory. Naming the
+        // binary rif after the game instead removes that requirement
+        // entirely, so DLCs/games/updates never need grouping. Vita3K's
+        // manual license picker accepts a same-content file named either
+        // .bin or .rif.
+        final dir = p.dirname(pkgPath);
+        final baseName = p.basenameWithoutExtension(pkgPath);
+        final rifPath = p.join(dir, '$baseName.rif');
+        // Already backed by this exact file (re-merging onto itself) —
+        // nothing to do.
+        if (!p.equals(license.rifPath ?? '', rifPath)) {
+          await File(rifPath).writeAsBytes(await license.rifBytes());
+        }
+        return pkgPath;
+      case VitaDownloadMode.decryptToZip:
+        final platformDir = await _storage.getPlatformDirectory(task.platform);
+        final zipPath = await VitaDecryptService.decryptPkgToZip(
+          pkgPath: pkgPath,
+          zrif: license.zrif,
+          rifFilePath: license.rifPath,
+          outputDir: platformDir.path,
+        );
+        await File(pkgPath).delete();
+        return zipPath;
+      case VitaDownloadMode.pkgOnly:
+        return pkgPath;
+    }
+  }
+
+  /// Finds whichever license file is present in [candidates] — a `.zrif`
+  /// text file (legacy, or a leftover from testing) is preferred as-is if
+  /// present, otherwise a `.rif`/`work.bin` binary file is used directly
+  /// (no need to decode+re-encode it into a string; pkg2zip accepts the
+  /// file itself). Returns null if none of [candidates] exist.
+  _VitaLicense? _findExistingLicense(List<File> candidates) {
+    final zrifFile = candidates
+        .where((f) => f.path.toLowerCase().endsWith('.zrif') && f.existsSync())
+        .firstOrNull;
+    if (zrifFile != null) {
+      final text = zrifFile.readAsStringSync().trim();
+      if (text.isNotEmpty) return _VitaLicense.fromZrif(text);
+    }
+    final rifFile = candidates
+        .where(
+          (f) =>
+              (f.path.toLowerCase().endsWith('.rif') ||
+                  p.basename(f.path).toLowerCase() == 'work.bin') &&
+              f.existsSync(),
+        )
+        .firstOrNull;
+    if (rifFile != null) {
+      return _VitaLicense.fromRifFile(rifFile.path);
+    }
+    return null;
+  }
+
+  /// Manually (re)applies a Vita license to an already-completed download.
+  /// [task.filePath] may be a plain `.pkg` (the fallback path for when
+  /// [_maybeHandleVitaLicense] bailed out, e.g. the catalog's ZRIF link
+  /// 404s; possibly with a sibling `<name>.rif` already sitting next to it
+  /// from a prior [VitaDownloadMode.pkgWithLicense] pass), or — for
+  /// downloads made before that mode went flat — a per-game subfolder
+  /// containing the pkg and its license. Either way, an already-saved
+  /// license is reused as the source (no re-fetch) unless [manualZrif]
+  /// overrides it, and any leftover license file(s)/subfolder are removed
+  /// once merged into a decrypted zip.
+  ///
+  /// Updates and persists the task's [DownloadTask.filePath] on success;
+  /// throws on failure so the caller (UI) can surface the error directly,
+  /// rather than silently keeping the prior state like the automatic path
+  /// does.
+  Future<void> applyVitaLicense(
+    DownloadTask task,
+    VitaDownloadMode mode, {
+    String? manualZrif,
+  }) async {
+    final taskPath = task.filePath;
+    if (taskPath == null) {
+      throw StateError('The downloaded .pkg file could not be found on disk.');
+    }
+
+    String pkgPath;
+    Directory? sourceFolder;
+    List<File> siblingLicenseFiles = const [];
+    _VitaLicense? existingLicense;
+    if (await Directory(taskPath).exists()) {
+      // Legacy layout: pkg + license inside a per-game subfolder.
+      sourceFolder = Directory(taskPath);
+      final entries = sourceFolder.listSync().whereType<File>().toList();
+      final pkgFile = entries
+          .where((f) => f.path.toLowerCase().endsWith('.pkg'))
+          .firstOrNull;
+      if (pkgFile == null) {
+        throw StateError('No .pkg file found in $taskPath.');
+      }
+      pkgPath = pkgFile.path;
+      existingLicense = _findExistingLicense(entries);
+    } else if (await File(taskPath).exists()) {
+      // Flat layout (current): pkg with an optional <name>.rif sibling.
+      pkgPath = taskPath;
+      final dir = Directory(p.dirname(pkgPath));
+      final baseName = p.basenameWithoutExtension(pkgPath);
+      siblingLicenseFiles = [
+        File(p.join(dir.path, '$baseName.zrif')),
+        File(p.join(dir.path, '$baseName.rif')),
+      ].where((f) => f.existsSync()).toList();
+      existingLicense = _findExistingLicense(siblingLicenseFiles);
+    } else {
+      throw StateError('The downloaded .pkg file could not be found on disk.');
+    }
+
+    final manual = manualZrif?.trim();
+    final license = (manual != null && manual.isNotEmpty)
+        ? _VitaLicense.fromZrif(manual)
+        : existingLicense ?? _VitaLicense.fromZrif(await _fetchVitaZrif(task));
+
+    final finalPath = await _applyVitaLicense(task, pkgPath, mode, license);
+
+    // pkgWithLicense round-tripping back onto itself needs no cleanup;
+    // decryptToZip consumes the pkg but leaves the legacy subfolder (now
+    // empty) or flat sibling license files behind — remove them now that
+    // their contents are merged into the zip.
+    if (!p.equals(finalPath, pkgPath) && !p.equals(finalPath, taskPath)) {
+      if (sourceFolder != null && await sourceFolder.exists()) {
+        await sourceFolder.delete(recursive: true);
+      }
+      for (final file in siblingLicenseFiles) {
+        if (await file.exists()) await file.delete();
+      }
+    }
+
+    final updatedTask = task.copyWith(filePath: finalPath);
+    _activeTasks[task.id] = updatedTask;
+    await _db.updateDownload(updatedTask);
+    _downloadController.add(updatedTask);
+  }
+
+  /// After a 3DS archive extracts, decrypt the resulting `.3ds` in place if
+  /// a boot9 keys file is configured, so emulators like Azahar (which
+  /// refuse to decrypt at load time) can use it directly. A seeddb.bin
+  /// (also user-supplied) is passed along if configured, needed only for
+  /// the subset of titles using seed crypto. Best-effort and never fatal to
+  /// the download: an unset/wrong boot9, a missing/mismatched seed, or any
+  /// other decrypt failure just leaves the extracted file encrypted, which
+  /// is still a usable (if Azahar-incompatible) file.
+  Future<void> _maybeDecrypt3ds(String path, String platform) async {
+    if (platform != '3ds' && platform != 'n3ds') return;
+    final boot9Path = getThreeDsBoot9Path();
+    if (boot9Path == null) return;
+    try {
+      await _ncchDecrypt.decryptCci(path, boot9Path, getThreeDsSeeddbPath());
+    } catch (_) {
+      // Best-effort — see doc comment above.
     }
   }
 

@@ -74,6 +74,21 @@ android {
 
         manifestPlaceholders["appLabel"] =
             if (ciBranch != null) "romgi-bio ($ciBranch)" else "romgi-bio"
+
+        // Builds pkg2zip (vendored at src/main/cpp/pkg2zip) into
+        // src/main/jniLibs/<abi>/libpkg2zip.so — see src/main/cpp/CMakeLists.txt.
+        externalNativeBuild {
+            cmake {
+                targets += "pkg2zip_bin"
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     signingConfigs {

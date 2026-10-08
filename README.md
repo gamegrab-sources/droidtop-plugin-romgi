@@ -121,19 +121,9 @@ The built APK will be located at `build/app/outputs/flutter-apk/app-release.apk`
 
 Release builds are filtered to **arm64-v8a** to keep the APK size sane after bundling the BitTorrent runtime. Every modern Android phone and retro handheld is arm64. To produce a 4-ABI build, edit `abiFilters` in `android/app/build.gradle.kts`.
 
-### Rebuild the catalog database (optional)
+### The catalog database
 
-The app pulls a pre-built SQLite catalog from this repo. CI rebuilds it weekly. If you want to run the build locally:
-
-```bash
-cd db
-pip install -r requirements.txt
-python workflow.py                  # full rebuild
-python workflow.py --use-cached     # reuse cached HTTP responses
-python workflow.py --skip-minerva   # skip the ~1.7 GB MiNERVA mirror download
-```
-
-Output is `db/romdb.db`. Adding a new source = drop a folder under `db/sources/<id>/` with `source.yml` + `scraper.py` and add the platform routes in `db/platforms.yml`.
+The app pulls a pre-built SQLite catalog from this repo, updated weekly. `db/CATALOG.md` documents the artifact format. The catalog is provided for use in romgi; forks and derivative tools are not supported.
 
 ## Technical Details
 
@@ -157,6 +147,7 @@ Output is `db/romdb.db`. Adding a new source = drop a folder under `db/sources/<
 | `webview_flutter`             | IA login flow                           |
 | `pigeon`                      | Type-safe Dart ↔ Kotlin bridge (torrent + extraction) |
 | `libtorrent4j` (Android)      | BitTorrent runtime with file priorities |
+| `pkg2zip` (vendored, Android) | Decrypts PS Vita `.pkg` files (with a zRIF license) to a NoNpDrm-format zip |
 
 ## Disclaimer
 
@@ -167,6 +158,7 @@ romgi is a tool for downloading content; it does not host any ROMs or copyrighte
 - **Data Sources**: MiNERVA Archive, Internet Archive, NoPayStation, MarioCube
 - **Inspiration**: [pkgi-psp](https://github.com/bucanero/pkgi-psp), [Kekatsu-DS](https://github.com/cavv-dev/Kekatsu-DS)
 - **Framework**: [Flutter](https://flutter.dev/)
+- **Vendored Code**: [pkg2zip](https://github.com/mmozeiko/pkg2zip) by mmozeiko (public domain / Unlicense) — vendored at `android/app/src/main/cpp/pkg2zip/` (one small local patch on top, see the comment in `CMakeLists.txt`) to decrypt PS Vita `.pkg` downloads into an install-ready zip
 
 ## License
 

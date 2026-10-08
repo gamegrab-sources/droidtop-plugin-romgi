@@ -1,6 +1,10 @@
+import 'dart:io';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/models.dart';
 import '../providers/providers.dart';
@@ -327,6 +331,18 @@ class _CompletedDownloadTile extends ConsumerWidget {
 
   const _CompletedDownloadTile({required this.task});
 
+  // A completed Vita download still sitting at a plain top-level .pkg means
+  // the license either wasn't requested (pkgOnly) or the automatic fetch
+  // failed silently; a pkg+license folder (pkgWithLicense mode) is also
+  // eligible, to let the user merge it into a decrypted zip on request.
+  // Either way, offer the license/decrypt action.
+  bool get _hasVitaPkgToDecrypt {
+    if (task.platform != 'psv' || task.filePath == null) return false;
+    final path = task.filePath!;
+    if (path.toLowerCase().endsWith('.pkg')) return true;
+    return FileSystemEntity.isDirectorySync(path);
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return ListTile(
@@ -351,6 +367,15 @@ class _CompletedDownloadTile extends ConsumerWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (_hasVitaPkgToDecrypt)
+            IconButton(
+              icon: const Icon(Icons.vpn_key_outlined),
+              tooltip: 'Decrypt with license',
+              onPressed: () => showDialog(
+                context: context,
+                builder: (_) => _VitaLicenseDialog(task: task),
+              ),
+            ),
           Icon(
             Icons.check_circle,
             color: Theme.of(context).colorScheme.primary,
@@ -366,6 +391,195 @@ class _CompletedDownloadTile extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _VitaLicenseDialog extends ConsumerStatefulWidget {
+  final DownloadTask task;
+
+  const _VitaLicenseDialog({required this.task});
+
+  @override
+  ConsumerState<_VitaLicenseDialog> createState() => _VitaLicenseDialogState();
+}
+
+class _VitaLicenseDialogState extends ConsumerState<_VitaLicenseDialog> {
+  final _zrifController = TextEditingController();
+  late VitaDownloadMode _mode;
+  bool _applying = false;
+  String? _error;
+  String? _sourceUrl;
+
+  // Already has a saved license — either the legacy per-game subfolder
+  // layout, or the current flat <name>.rif sitting next to the pkg (a
+  // leftover <name>.zrif from before that switch also counts). The only
+  // thing worth doing here is merging it into a decrypted zip, so default
+  // to that instead of the general per-platform setting.
+  bool get _hasExistingLicense {
+    final path = widget.task.filePath;
+    if (path == null) return false;
+    if (FileSystemEntity.isDirectorySync(path)) return true;
+    final withoutExt = p.withoutExtension(path);
+    return File('$withoutExt.rif').existsSync() ||
+        File('$withoutExt.zrif').existsSync();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    if (_hasExistingLicense) {
+      _mode = VitaDownloadMode.decryptToZip;
+    } else {
+      _mode = ref.read(settingsProvider).vitaDownloadMode;
+      if (_mode == VitaDownloadMode.pkgOnly) {
+        _mode = VitaDownloadMode.pkgWithLicense;
+      }
+    }
+    ref
+        .read(downloadProvider.notifier)
+        .getVitaLicenseSourceUrl(widget.task)
+        .then((url) {
+      if (mounted) setState(() => _sourceUrl = url);
+    });
+  }
+
+  Future<void> _openSource() async {
+    final url = _sourceUrl;
+    if (url == null) return;
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  @override
+  void dispose() {
+    _zrifController.dispose();
+    super.dispose();
+  }
+
+  String _modeName(VitaDownloadMode mode) {
+    switch (mode) {
+      case VitaDownloadMode.pkgOnly:
+        return 'PKG only';
+      case VitaDownloadMode.pkgWithLicense:
+        return 'PKG + license (folder)';
+      case VitaDownloadMode.decryptToZip:
+        return 'Decrypt to zip';
+    }
+  }
+
+  Future<void> _apply() async {
+    setState(() {
+      _applying = true;
+      _error = null;
+    });
+    try {
+      await ref.read(downloadProvider.notifier).applyVitaLicense(
+            widget.task,
+            _mode,
+            manualZrif: _zrifController.text,
+          );
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      setState(() {
+        _error = e.toString();
+        _applying = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(_hasExistingLicense ? 'Merge into decrypted zip' : 'Decrypt with license'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (_hasExistingLicense) ...[
+              Text(
+                'This pkg + license folder will be merged into a single '
+                'decrypted zip; the folder is removed once that succeeds.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 8),
+            ],
+            for (final mode in [
+              VitaDownloadMode.pkgWithLicense,
+              VitaDownloadMode.decryptToZip,
+            ])
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(
+                  mode == _mode
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                  color: mode == _mode
+                      ? Theme.of(context).colorScheme.primary
+                      : null,
+                ),
+                title: Text(_modeName(mode)),
+                onTap: () => setState(() => _mode = mode),
+              ),
+            const SizedBox(height: 8),
+            Text(
+              _hasExistingLicense
+                  ? 'Apply reuses the license already saved in this folder. '
+                      'To use a different one instead, paste a zRIF below:'
+                  : 'Apply retries fetching the zRIF license from the catalog. '
+                      'If that keeps failing (e.g. a 404), open the title\'s '
+                      'NoPayStation page, copy its zRIF, and paste it below instead:',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: _sourceUrl == null ? null : _openSource,
+              icon: const Icon(Icons.open_in_new, size: 18),
+              label: Text(
+                _sourceUrl == null
+                    ? 'No catalog page found for this title'
+                    : 'Open on NoPayStation',
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _zrifController,
+              decoration: const InputDecoration(
+                labelText: 'zRIF (optional — paste after copying above)',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              maxLines: 3,
+              minLines: 1,
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _applying ? null : () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _applying ? null : _apply,
+          child: _applying
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Apply'),
+        ),
+      ],
     );
   }
 }

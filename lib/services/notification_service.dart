@@ -221,6 +221,38 @@ class NotificationService with WidgetsBindingObserver {
     );
   }
 
+  /// A lightweight, always-shown notice for a non-fatal issue on an
+  /// otherwise-completed download (e.g. a Vita license fetch/decrypt step
+  /// that didn't apply). Unlike [showDownloadComplete]/[showDownloadFailed]
+  /// this never suppresses itself while the app is in the foreground, since
+  /// it's meant to be visible while actively testing, not just as a
+  /// background-return notice.
+  Future<void> showNonFatalIssue({
+    required String title,
+    required String message,
+  }) async {
+    final androidDetails = AndroidNotificationDetails(
+      _completeChannelId,
+      _completeChannelName,
+      channelDescription: _completeChannelDesc,
+      importance: Importance.high,
+      priority: Priority.high,
+      icon: '@mipmap/ic_launcher',
+    );
+
+    final notificationDetails = NotificationDetails(android: androidDetails);
+
+    final notificationId = DateTime.now().millisecondsSinceEpoch % 100000 + 100;
+
+    await _notifications.show(
+      notificationId,
+      title,
+      message,
+      notificationDetails,
+      payload: 'downloads',
+    );
+  }
+
   Future<void> showDownloadFailed({
     required String title,
     String? error,

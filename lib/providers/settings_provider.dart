@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/download_service.dart' show VitaDownloadMode;
+
+export '../services/download_service.dart' show VitaDownloadMode;
+
 enum AppThemeMode { system, light, dark }
 
 class SettingsState {
@@ -17,6 +21,7 @@ class SettingsState {
   final bool debridEnabled;
   final String debridProviderId;
   final bool metadataEnabled;
+  final VitaDownloadMode vitaDownloadMode;
   final String? threeDsBoot9Path;
   final String? threeDsSeeddbPath;
   final bool isLoading;
@@ -34,6 +39,7 @@ class SettingsState {
     this.debridEnabled = false,
     this.debridProviderId = 'torbox',
     this.metadataEnabled = true,
+    this.vitaDownloadMode = VitaDownloadMode.pkgOnly,
     this.threeDsBoot9Path,
     this.threeDsSeeddbPath,
     this.isLoading = false,
@@ -58,6 +64,7 @@ class SettingsState {
     bool? debridEnabled,
     String? debridProviderId,
     bool? metadataEnabled,
+    VitaDownloadMode? vitaDownloadMode,
     String? threeDsBoot9Path,
     bool clearThreeDsBoot9Path = false,
     String? threeDsSeeddbPath,
@@ -81,6 +88,7 @@ class SettingsState {
       debridEnabled: debridEnabled ?? this.debridEnabled,
       debridProviderId: debridProviderId ?? this.debridProviderId,
       metadataEnabled: metadataEnabled ?? this.metadataEnabled,
+      vitaDownloadMode: vitaDownloadMode ?? this.vitaDownloadMode,
       threeDsBoot9Path: clearThreeDsBoot9Path
           ? null
           : (threeDsBoot9Path ?? this.threeDsBoot9Path),
@@ -121,6 +129,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
   static const String _keyDebridEnabled = 'debrid_enabled';
   static const String _keyDebridProviderId = 'debrid_provider_id';
   static const String _keyMetadataEnabled = 'metadata_enabled';
+  static const String _keyVitaDownloadMode = 'vita_download_mode';
   static const String _keyThreeDsBoot9Path = 'three_ds_boot9_path';
   static const String _keyThreeDsSeeddbPath = 'three_ds_seeddb_path';
 
@@ -154,6 +163,9 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     final debridProviderId =
         prefs.getString(_keyDebridProviderId) ?? 'torbox';
     final metadataEnabled = prefs.getBool(_keyMetadataEnabled) ?? true;
+    final vitaDownloadModeIndex = prefs.getInt(_keyVitaDownloadMode) ?? 0;
+    final vitaDownloadMode = VitaDownloadMode.values[vitaDownloadModeIndex.clamp(
+        0, VitaDownloadMode.values.length - 1)];
     final threeDsBoot9Path = prefs.getString(_keyThreeDsBoot9Path);
     final threeDsSeeddbPath = prefs.getString(_keyThreeDsSeeddbPath);
 
@@ -184,6 +196,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       debridEnabled: debridEnabled,
       debridProviderId: debridProviderId,
       metadataEnabled: metadataEnabled,
+      vitaDownloadMode: vitaDownloadMode,
       threeDsBoot9Path: threeDsBoot9Path,
       threeDsSeeddbPath: threeDsSeeddbPath,
       isLoading: false,
@@ -281,6 +294,12 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     state = state.copyWith(metadataEnabled: value);
   }
 
+  Future<void> setVitaDownloadMode(VitaDownloadMode mode) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_keyVitaDownloadMode, mode.index);
+    state = state.copyWith(vitaDownloadMode: mode);
+  }
+
   Future<void> setThreeDsBoot9Path(String? path) async {
     final prefs = await SharedPreferences.getInstance();
 
@@ -324,6 +343,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     await prefs.remove(_keyDebridEnabled);
     await prefs.remove(_keyDebridProviderId);
     await prefs.remove(_keyMetadataEnabled);
+    await prefs.remove(_keyVitaDownloadMode);
     await prefs.remove(_keyThreeDsBoot9Path);
     await prefs.remove(_keyThreeDsSeeddbPath);
 

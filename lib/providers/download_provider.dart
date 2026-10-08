@@ -265,6 +265,19 @@ class DownloadNotifier extends StateNotifier<DownloadState> {
     await refresh();
   }
 
+  Future<void> applyVitaLicense(
+    DownloadTask task,
+    VitaDownloadMode mode, {
+    String? manualZrif,
+  }) async {
+    await _service.applyVitaLicense(task, mode, manualZrif: manualZrif);
+    await refresh();
+  }
+
+  Future<String?> getVitaLicenseSourceUrl(DownloadTask task) {
+    return _service.getVitaLicenseSourceUrl(task);
+  }
+
   Future<void> clearCompletedDownloads() async {
     await _service.clearCompletedDownloads();
     await refresh();
@@ -295,6 +308,7 @@ final downloadProvider = StateNotifierProvider<DownloadNotifier, DownloadState>(
         debridEnabled:
             settings.debridEnabled && debridService.isConfiguredSync(),
       );
+  service.getVitaDownloadMode = () => settings.vitaDownloadMode;
   service.getThreeDsBoot9Path = () => settings.threeDsBoot9Path;
   service.getThreeDsSeeddbPath = () => settings.threeDsSeeddbPath;
   final notifier = DownloadNotifier(

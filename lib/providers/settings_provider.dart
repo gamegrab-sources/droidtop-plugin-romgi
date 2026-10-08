@@ -22,6 +22,8 @@ class SettingsState {
   final String debridProviderId;
   final bool metadataEnabled;
   final VitaDownloadMode vitaDownloadMode;
+  final String? threeDsBoot9Path;
+  final String? threeDsSeeddbPath;
   final bool isLoading;
 
   const SettingsState({
@@ -38,6 +40,8 @@ class SettingsState {
     this.debridProviderId = 'torbox',
     this.metadataEnabled = true,
     this.vitaDownloadMode = VitaDownloadMode.pkgOnly,
+    this.threeDsBoot9Path,
+    this.threeDsSeeddbPath,
     this.isLoading = false,
   });
 
@@ -61,6 +65,10 @@ class SettingsState {
     String? debridProviderId,
     bool? metadataEnabled,
     VitaDownloadMode? vitaDownloadMode,
+    String? threeDsBoot9Path,
+    bool clearThreeDsBoot9Path = false,
+    String? threeDsSeeddbPath,
+    bool clearThreeDsSeeddbPath = false,
     bool? isLoading,
   }) {
     return SettingsState(
@@ -81,6 +89,12 @@ class SettingsState {
       debridProviderId: debridProviderId ?? this.debridProviderId,
       metadataEnabled: metadataEnabled ?? this.metadataEnabled,
       vitaDownloadMode: vitaDownloadMode ?? this.vitaDownloadMode,
+      threeDsBoot9Path: clearThreeDsBoot9Path
+          ? null
+          : (threeDsBoot9Path ?? this.threeDsBoot9Path),
+      threeDsSeeddbPath: clearThreeDsSeeddbPath
+          ? null
+          : (threeDsSeeddbPath ?? this.threeDsSeeddbPath),
       isLoading: isLoading ?? this.isLoading,
     );
   }
@@ -116,6 +130,8 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
   static const String _keyDebridProviderId = 'debrid_provider_id';
   static const String _keyMetadataEnabled = 'metadata_enabled';
   static const String _keyVitaDownloadMode = 'vita_download_mode';
+  static const String _keyThreeDsBoot9Path = 'three_ds_boot9_path';
+  static const String _keyThreeDsSeeddbPath = 'three_ds_seeddb_path';
 
   SettingsNotifier() : super(const SettingsState()) {
     _loadSettings();
@@ -150,6 +166,8 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     final vitaDownloadModeIndex = prefs.getInt(_keyVitaDownloadMode) ?? 0;
     final vitaDownloadMode = VitaDownloadMode.values[vitaDownloadModeIndex.clamp(
         0, VitaDownloadMode.values.length - 1)];
+    final threeDsBoot9Path = prefs.getString(_keyThreeDsBoot9Path);
+    final threeDsSeeddbPath = prefs.getString(_keyThreeDsSeeddbPath);
 
     // Load platform-specific paths
     final platformPaths = <String, String>{};
@@ -179,6 +197,8 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       debridProviderId: debridProviderId,
       metadataEnabled: metadataEnabled,
       vitaDownloadMode: vitaDownloadMode,
+      threeDsBoot9Path: threeDsBoot9Path,
+      threeDsSeeddbPath: threeDsSeeddbPath,
       isLoading: false,
     );
   }
@@ -280,6 +300,30 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     state = state.copyWith(vitaDownloadMode: mode);
   }
 
+  Future<void> setThreeDsBoot9Path(String? path) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    if (path == null) {
+      await prefs.remove(_keyThreeDsBoot9Path);
+      state = state.copyWith(clearThreeDsBoot9Path: true);
+    } else {
+      await prefs.setString(_keyThreeDsBoot9Path, path);
+      state = state.copyWith(threeDsBoot9Path: path);
+    }
+  }
+
+  Future<void> setThreeDsSeeddbPath(String? path) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    if (path == null) {
+      await prefs.remove(_keyThreeDsSeeddbPath);
+      state = state.copyWith(clearThreeDsSeeddbPath: true);
+    } else {
+      await prefs.setString(_keyThreeDsSeeddbPath, path);
+      state = state.copyWith(threeDsSeeddbPath: path);
+    }
+  }
+
   Future<void> setMaxConcurrentDownloads(int value) async {
     final clamped = value.clamp(0, 10);
     final prefs = await SharedPreferences.getInstance();
@@ -300,6 +344,8 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     await prefs.remove(_keyDebridProviderId);
     await prefs.remove(_keyMetadataEnabled);
     await prefs.remove(_keyVitaDownloadMode);
+    await prefs.remove(_keyThreeDsBoot9Path);
+    await prefs.remove(_keyThreeDsSeeddbPath);
 
     for (final key in prefs.getKeys().toList()) {
       if (key.startsWith(_keyPlatformPaths) ||

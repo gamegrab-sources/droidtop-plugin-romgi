@@ -10,6 +10,8 @@ final updateServiceProvider = Provider<UpdateService>((ref) {
 enum UpdateStatus {
   idle,
   checking,
+  upToDate,
+  unavailable,
   available,
   downloading,
   readyToInstall,
@@ -59,6 +61,15 @@ class UpdateNotifier extends StateNotifier<UpdateState> {
   UpdateNotifier(this._service) : super(const UpdateState());
 
   Future<void> checkForUpdate() async {
+    if (!_service.checksForUpdates) {
+      state = state.copyWith(
+        status: UpdateStatus.unavailable,
+        clearUpdate: true,
+        clearError: true,
+      );
+      return;
+    }
+
     state = state.copyWith(status: UpdateStatus.checking, clearError: true);
 
     try {
@@ -69,7 +80,10 @@ class UpdateNotifier extends StateNotifier<UpdateState> {
           availableUpdate: update,
         );
       } else {
-        state = state.copyWith(status: UpdateStatus.idle, clearUpdate: true);
+        state = state.copyWith(
+          status: UpdateStatus.upToDate,
+          clearUpdate: true,
+        );
       }
     } catch (error) {
       state = state.copyWith(

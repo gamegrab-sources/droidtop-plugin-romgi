@@ -15,6 +15,7 @@ import 'database_service.dart';
 import 'debrid_service.dart';
 import 'host_adapter.dart';
 import 'link_resolver.dart';
+import 'ncch_decrypt_service.dart';
 import 'notification_service.dart';
 import 'playlist_writer.dart';
 import 'rom_database_service.dart';
@@ -92,10 +93,13 @@ class DownloadService {
   final HostAdapterRegistry _adapters;
   final TorrentService _torrents;
   final SevenZipService _sevenZip;
+  final NcchDecryptService _ncchDecrypt;
   final DebridService? _debrid;
   late final PlaylistWriter _playlistWriter;
   bool Function(String platform) shouldExtractForPlatform = (_) => true;
   VitaDownloadMode Function() getVitaDownloadMode = () => VitaDownloadMode.pkgOnly;
+  String? Function() getThreeDsBoot9Path = () => null;
+  String? Function() getThreeDsSeeddbPath = () => null;
   final Dio _dio;
   Dio? _nativeDio;
   final _uuid = const Uuid();
@@ -141,6 +145,7 @@ class DownloadService {
     required HostAdapterRegistry adapters,
     required TorrentService torrents,
     required SevenZipService sevenZip,
+    NcchDecryptService? ncchDecrypt,
     DebridService? debrid,
     Dio? dio,
   })  : _db = db,
@@ -150,6 +155,7 @@ class DownloadService {
         _adapters = adapters,
         _torrents = torrents,
         _sevenZip = sevenZip,
+        _ncchDecrypt = ncchDecrypt ?? NcchDecryptService(),
         _debrid = debrid,
         _dio = dio ?? Dio() {
     _playlistWriter = PlaylistWriter(
@@ -982,6 +988,7 @@ class DownloadService {
       try {
         final extractedPath = await _extractArchive(downloadPath, task.platform);
         await File(downloadPath).delete();
+        await _maybeDecrypt3ds(extractedPath, task.platform);
         updatedTask = updatedTask.copyWith(
           status: DownloadStatus.completed,
           progress: 1.0,
@@ -1081,6 +1088,7 @@ class DownloadService {
         try {
           finalPath = await _extractArchive(destPath, task.platform);
           await File(destPath).delete();
+          await _maybeDecrypt3ds(finalPath, task.platform);
         } catch (_) {
           await _failTask(task, 'Extraction failed — the archive may be corrupt');
           return;
@@ -1270,6 +1278,7 @@ class DownloadService {
       try {
         finalPath = await _extractArchive(dest, task.platform);
         await File(dest).delete();
+        await _maybeDecrypt3ds(finalPath, task.platform);
       } catch (_) {
         await _failTorrentTask(
           task,
@@ -1878,6 +1887,25 @@ class DownloadService {
     _activeTasks[task.id] = updatedTask;
     await _db.updateDownload(updatedTask);
     _downloadController.add(updatedTask);
+  }
+
+  /// After a 3DS archive extracts, decrypt the resulting `.3ds` in place if
+  /// a boot9 keys file is configured, so emulators like Azahar (which
+  /// refuse to decrypt at load time) can use it directly. A seeddb.bin
+  /// (also user-supplied) is passed along if configured, needed only for
+  /// the subset of titles using seed crypto. Best-effort and never fatal to
+  /// the download: an unset/wrong boot9, a missing/mismatched seed, or any
+  /// other decrypt failure just leaves the extracted file encrypted, which
+  /// is still a usable (if Azahar-incompatible) file.
+  Future<void> _maybeDecrypt3ds(String path, String platform) async {
+    if (platform != '3ds' && platform != 'n3ds') return;
+    final boot9Path = getThreeDsBoot9Path();
+    if (boot9Path == null) return;
+    try {
+      await _ncchDecrypt.decryptCci(path, boot9Path, getThreeDsSeeddbPath());
+    } catch (_) {
+      // Best-effort — see doc comment above.
+    }
   }
 
   /// The on-disk filename to save a task under: the game's title (from the

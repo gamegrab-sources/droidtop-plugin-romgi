@@ -64,6 +64,17 @@ mkdir -p droidtop_plugin/build/payload/lib/arm64-v8a droidtop_plugin/build/paylo
 unzip -p "$APK" lib/arm64-v8a/libapp.so > droidtop_plugin/build/payload/lib/arm64-v8a/libapp.so
 unzip -p "$APK" lib/x86_64/libapp.so > droidtop_plugin/build/payload/lib/x86_64/libapp.so
 
+# romgi's own Flutter plugin packages (sqflite, path_provider,
+# shared_preferences, ...) keep their Android half in the APK's classes*.dex,
+# together with the generated GeneratedPluginRegistrant. droidtop's engine host
+# (FlutterEngineHost.registerGeneratedPlugins) loads payload/dex/ and calls the
+# registrant, which is what lets the game index (sqflite) open at all: without
+# it the first search dies with a channel-error, the failure that made the
+# downloader look dead.
+mkdir -p droidtop_plugin/build/payload/dex
+unzip -qo "$APK" 'classes*.dex' -d droidtop_plugin/build/payload/dex
+test -n "$(ls droidtop_plugin/build/payload/dex)" || { echo "no classes*.dex in $APK" >&2; exit 1; }
+
 # flutter_assets lives at "assets/flutter_assets/**" inside the APK; the
 # plugin payload wants it at its own top-level "flutter_assets/**" (what
 # FlutterDroidtopPlugin.loadAssetsIntoEngine reads from installDir) --
@@ -89,6 +100,14 @@ payload.sort(key=lambda e: e["path"])
 
 manifest = json.load(open("droidtop_plugin/manifest.template.json"))
 manifest["id"] = plugin_id
+# The published version is <declared>-<CI run> (Droidtop/tracker#126), so two
+# builds of one declared version are never shown under the same string. A
+# build outside CI keeps the declared version alone.
+build = os.environ.get("DROIDTOP_PLUGIN_BUILD", "").strip()
+if build:
+    if not build.isdigit():
+        sys.exit(f"DROIDTOP_PLUGIN_BUILD must be a CI run number, got {build!r}")
+    manifest["version"] = f'{manifest["version"]}-{build}'
 manifest["label"] = f"romgi ({line})"
 manifest["runtimeVersion"] = runtime_version
 manifest["payload"] = payload
@@ -96,7 +115,7 @@ json.dump(manifest, open("droidtop_plugin/build/manifest.json", "w"), indent=2, 
 print(f"payload: {len(payload)} files, id={plugin_id}")
 PY
 
-echo "Built droidtop_plugin/build/payload/{lib,flutter_assets} and droidtop_plugin/build/manifest.json (unsigned)"
+echo "Built droidtop_plugin/build/payload/{lib,dex,flutter_assets} and droidtop_plugin/build/manifest.json (unsigned)"
 
 if [ -n "${PRIVATE_PLUGIN_SIGNING_KEY:-}" ]; then
   PRIVATE_PLUGIN_SIGNING_KEY="$PRIVATE_PLUGIN_SIGNING_KEY" ./droidtop_plugin/sign.sh

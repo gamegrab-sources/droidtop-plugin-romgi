@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Signs and packages an already-built plugin bundle (build.sh output:
-# manifest.json + payload/{lib,flutter_assets}) into
+# manifest.json + payload/{lib,dex,flutter_assets}) into
 # <plugin id>.droidplugin.tar.xz.
 #
 # This plugin is private and not part of the official droidtop trust
@@ -20,6 +20,7 @@ cd "$(dirname "$0")/.."
 
 test -f "$BUNDLE_DIR/manifest.json" || { echo "missing $BUNDLE_DIR/manifest.json -- run droidtop_plugin/build.sh first" >&2; exit 1; }
 test -d "$BUNDLE_DIR/payload/lib" || { echo "missing $BUNDLE_DIR/payload/lib -- run droidtop_plugin/build.sh first" >&2; exit 1; }
+test -d "$BUNDLE_DIR/payload/dex" || { echo "missing $BUNDLE_DIR/payload/dex -- run droidtop_plugin/build.sh first" >&2; exit 1; }
 test -d "$BUNDLE_DIR/payload/flutter_assets" || { echo "missing $BUNDLE_DIR/payload/flutter_assets -- run droidtop_plugin/build.sh first" >&2; exit 1; }
 
 PLUGIN_ID="$(python3 -c "import json; print(json.load(open('$BUNDLE_DIR/manifest.json'))['id'])")"
@@ -33,7 +34,7 @@ BUNDLE_ABS="$(cd "$BUNDLE_DIR" && pwd)"
 OUT="${PLUGIN_ID}.droidplugin.tar.xz"
 tar --sort=name -cf - \
   -C "$BUNDLE_ABS" manifest.json manifest.sig \
-  -C "$BUNDLE_ABS/payload" lib flutter_assets \
+  -C "$BUNDLE_ABS/payload" lib dex flutter_assets \
   | xz -9e > "$OUT"
 
 echo "Signed $OUT"

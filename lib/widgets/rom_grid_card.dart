@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../models/models.dart';
 import '../utils/utils.dart';
+import 'live_source_badge.dart';
 import 'retro_achievements_badge.dart';
 
 class RomGridCard extends StatelessWidget {
@@ -84,6 +85,15 @@ class RomGridCard extends StatelessWidget {
                       top: 4,
                       left: 4,
                       child: RetroAchievementsOverlayBadge(entry: entry),
+                    ),
+                  if (entry.isLive)
+                    Positioned(
+                      bottom: 4,
+                      left: 4,
+                      child: LiveSourceBadge(
+                        sourceId: entry.liveSource!,
+                        compact: true,
+                      ),
                     ),
                 ],
               ),

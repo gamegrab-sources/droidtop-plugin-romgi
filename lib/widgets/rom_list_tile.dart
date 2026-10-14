@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../models/models.dart';
 import '../utils/utils.dart';
+import 'live_source_badge.dart';
 import 'retro_achievements_badge.dart';
 
 class RomListTile extends StatelessWidget {
@@ -66,6 +67,10 @@ class RomListTile extends StatelessWidget {
         children: [
           _PlatformChip(platform: entry.platform),
           const SizedBox(width: 4),
+          if (entry.isLive) ...[
+            LiveSourceBadge(sourceId: entry.liveSource!),
+            const SizedBox(width: 4),
+          ],
           if (isDownloaded) ...[
             const _DownloadedBadge(),
             const SizedBox(width: 4),

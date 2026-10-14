@@ -11,6 +11,10 @@ class RomEntry {
   final List<String> regions;
   final List<DownloadLink> links;
 
+  /// The live search source this entry came from (`LiveSearchSource.id`),
+  /// or null for an entry of the offline catalog.
+  final String? liveSource;
+
   const RomEntry({
     required this.slug,
     this.romId,
@@ -21,9 +25,13 @@ class RomEntry {
     this.raNumAchievements,
     required this.regions,
     required this.links,
+    this.liveSource,
   });
 
   bool get hasRetroAchievements => raGameId != null;
+
+  /// A live search result: its slug is not in the local catalog.
+  bool get isLive => liveSource != null;
 
   factory RomEntry.fromJson(Map<String, dynamic> json) {
     return RomEntry(

@@ -141,5 +141,5 @@ jobs:
           gh release delete "$tag" --yes --cleanup-tag --repo "${{ github.repository }}" 2>/dev/null || true
           gh release create "$tag" "$BUNDLE" droidtop-plugin-key.json \
             --repo "${{ github.repository }}" \
-            --title "romgi (${{ github.ref_name }}) — latest plugin bundle" \
+            --title "romgi-bio (${{ github.ref_name }}) — latest plugin bundle" \
             --notes "Automated build from ${{ github.sha }}. Signed droidtop plugin bundle, private (independent \`bi0shacker001\` origin key -- see droidtop_plugin/README.md, not the official droidtop trust ring). Replaced on every push to \`${{ github.ref_name }}\`."

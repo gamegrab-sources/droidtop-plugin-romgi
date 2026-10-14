@@ -101,7 +101,7 @@ Future<String> _handle(MethodCall call) async {
     }
     return v2Error('UNSUPPORTED', 'Unsupported extension point or operation');
   } catch (_) {
-    return v2Error('FAILED', 'romgi could not complete the request');
+    return v2Error('FAILED', 'romgi-bio could not complete the request');
   }
 }
 
@@ -203,7 +203,7 @@ Future<void> _runJob(String jobId, Map<String, dynamic> envelope) async {
     }
     return await _complete(jobId, ok: false, error: 'Unsupported job operation');
   } catch (_) {
-    return _complete(jobId, ok: false, error: 'romgi could not complete the job');
+    return _complete(jobId, ok: false, error: 'romgi-bio could not complete the job');
   } finally {
     _running.remove(jobId);
   }

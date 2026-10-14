@@ -168,6 +168,7 @@ romgi is a tool for downloading content; it does not host any ROMs or copyrighte
 - **Inspiration**: [pkgi-psp](https://github.com/bucanero/pkgi-psp), [Kekatsu-DS](https://github.com/cavv-dev/Kekatsu-DS)
 - **Framework**: [Flutter](https://flutter.dev/)
 
-## License
+## Licence
 
-This project is open source. See the [LICENSE](LICENSE) file for details.
+GPL-3.0, see [LICENSE](LICENSE) and [NOTICE](NOTICE). The upstream romgi app by Christian Prado is MIT; its notice is kept in [LICENSE.MIT](LICENSE.MIT).
+

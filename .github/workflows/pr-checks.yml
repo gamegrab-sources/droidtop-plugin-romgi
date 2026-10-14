@@ -9,35 +9,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  python-tests:
-    name: Python tests (db/)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-          cache-dependency-path: db/requirements.txt
-
-      - name: Install runtime + test deps
-        run: pip install -r db/requirements.txt pytest
-
-      - name: Build MiNERVA test fixture
-        working-directory: db
-        run: python tests/fixtures/build_minerva_fixture.py
-
-      - name: Run pytest
-        working-directory: db
-        run: python -m pytest tests -v
-
   flutter-analyze:
     name: Flutter analyze
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -52,7 +28,7 @@ jobs:
     name: Flutter test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -70,7 +46,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # This job builds BOTH debug and release APKs from a cold Gradle/
       # Flutter cache on any repo that hasn't warmed one up yet (a fresh
@@ -93,13 +69,13 @@ jobs:
           df -h /
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2

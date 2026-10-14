@@ -433,7 +433,7 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
             RomListTile(
               entry: entry,
               isDownloaded: downloadedSet.contains(entry.slug),
-              onTap: () => _openEntry(entry.slug),
+              onTap: () => _openEntry(entry),
             ),
             if (index < entries.length - 1) const Divider(height: 1),
           ],
@@ -470,14 +470,30 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
           return RomGridCard(
             entry: entry,
             isDownloaded: downloadedSet.contains(entry.slug),
-            onTap: () => _openEntry(entry.slug),
+            onTap: () => _openEntry(entry),
           );
         }, childCount: entries.length + (searchState.result!.hasMore ? 1 : 0)),
       ),
     );
   }
 
-  void _openEntry(String slug) {
+  void _openEntry(RomEntry entry) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => entry.isLive
+            ? EntryDetailScreen(slug: entry.slug, liveEntry: entry)
+            : EntryDetailScreen(slug: entry.slug),
+      ),
+    );
+  }
+
+  // Recently Viewed only stores slug/title/platform/boxartUrl, not a full
+  // entry with links — live results can't be reconstructed
+  // from that alone, so revisiting one from here is a known gap (same
+  // "Entry not found" outcome as any catalog entry that's since
+  // disappeared) rather than something worth a live re-fetch-by-slug path.
+  void _openEntryBySlug(String slug) {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => EntryDetailScreen(slug: slug)),
@@ -529,7 +545,7 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
               ...recentlyViewed.map(
                 (item) => _RecentlyViewedTile(
                   item: item,
-                  onTap: () => _openEntry(item.slug),
+                  onTap: () => _openEntryBySlug(item.slug),
                 ),
               ),
               const SizedBox(height: 24),

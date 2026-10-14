@@ -57,8 +57,12 @@ def extract_entries(response: str, source: dict[str, Any], platform: str, base_u
     """Extract entries from the HTML response using regex."""
     entries = []
     matches = []
-    # Common ROM file extensions
-    file_ext = r'(zip|chd|iso|7z|rar|nsp|xci|wbfs|rvz|cso|pbp|pkg|bin|nds|3ds|cia|gba|gbc|gb|n64|z64|v64|nes|sfc|smc|gen|md|sms|gg|pce|vpk|app|cue|wad|dol|gcm|wux|wua|lnx|lyx|a26|a78|col|int|jag|ngp|ngc|psx|ws|wsc|vb|vec)'
+    # Common ROM file extensions, plus classic Mac software archive/disk-image
+    # formats for the Macintosh Garden source (sit/sitx/dmg/toast/cdr/dsk/
+    # hqx/img — zip/iso/bin/cue are already covered). Extension frequencies
+    # verified against real archive.org Macintosh Garden file listings
+    # before picking this set, not guessed.
+    file_ext = r'(zip|chd|iso|7z|rar|nsp|xci|wbfs|rvz|cso|pbp|pkg|bin|nds|3ds|cia|gba|gbc|gb|n64|z64|v64|nes|sfc|smc|gen|md|sms|gg|pce|vpk|app|cue|wad|dol|gcm|wux|wua|lnx|lyx|a26|a78|col|int|jag|ngp|ngc|psx|ws|wsc|vb|vec|sit|sitx|dmg|toast|cdr|dsk|hqx|img)'
 
     # Strategy 1: Find linked files (public downloads)
     # Pattern: <a href="filename.ext">filename.ext</a>

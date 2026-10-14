@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/bios_service.dart'
+    show BiosService, BiosSourceSettings;
 import '../services/download_service.dart' show VitaDownloadMode;
 
 export '../services/download_service.dart' show VitaDownloadMode;
@@ -21,7 +23,20 @@ class SettingsState {
   final bool debridEnabled;
   final String debridProviderId;
   final bool metadataEnabled;
+  final bool ps3DownloadRap;
   final VitaDownloadMode vitaDownloadMode;
+  final bool prowlarrSearchEnabled;
+  final String prowlarrBaseUrl;
+  final bool macintoshGardenSearchEnabled;
+  final String? threeDsBoot9Path;
+  final String? threeDsSeeddbPath;
+
+  /// The folder BIOS and system files go in (RetroArch's system folder or
+  /// your emulator's); null means `bios` inside the download folder.
+  final String? biosFolderPath;
+  final bool biosRetrobiosEnabled;
+  final List<String> biosIaItems;
+  final List<String> biosUrlTemplates;
   final bool isLoading;
 
   const SettingsState({
@@ -37,7 +52,17 @@ class SettingsState {
     this.debridEnabled = false,
     this.debridProviderId = 'torbox',
     this.metadataEnabled = true,
+    this.ps3DownloadRap = false,
     this.vitaDownloadMode = VitaDownloadMode.pkgOnly,
+    this.prowlarrSearchEnabled = false,
+    this.prowlarrBaseUrl = '',
+    this.macintoshGardenSearchEnabled = false,
+    this.threeDsBoot9Path,
+    this.threeDsSeeddbPath,
+    this.biosFolderPath,
+    this.biosRetrobiosEnabled = true,
+    this.biosIaItems = const [],
+    this.biosUrlTemplates = const [],
     this.isLoading = false,
   });
 
@@ -60,7 +85,20 @@ class SettingsState {
     bool? debridEnabled,
     String? debridProviderId,
     bool? metadataEnabled,
+    bool? ps3DownloadRap,
     VitaDownloadMode? vitaDownloadMode,
+    bool? prowlarrSearchEnabled,
+    String? prowlarrBaseUrl,
+    bool? macintoshGardenSearchEnabled,
+    String? threeDsBoot9Path,
+    bool clearThreeDsBoot9Path = false,
+    String? threeDsSeeddbPath,
+    bool clearThreeDsSeeddbPath = false,
+    String? biosFolderPath,
+    bool clearBiosFolderPath = false,
+    bool? biosRetrobiosEnabled,
+    List<String>? biosIaItems,
+    List<String>? biosUrlTemplates,
     bool? isLoading,
   }) {
     return SettingsState(
@@ -80,10 +118,34 @@ class SettingsState {
       debridEnabled: debridEnabled ?? this.debridEnabled,
       debridProviderId: debridProviderId ?? this.debridProviderId,
       metadataEnabled: metadataEnabled ?? this.metadataEnabled,
+      ps3DownloadRap: ps3DownloadRap ?? this.ps3DownloadRap,
       vitaDownloadMode: vitaDownloadMode ?? this.vitaDownloadMode,
+      prowlarrSearchEnabled:
+          prowlarrSearchEnabled ?? this.prowlarrSearchEnabled,
+      prowlarrBaseUrl: prowlarrBaseUrl ?? this.prowlarrBaseUrl,
+      macintoshGardenSearchEnabled:
+          macintoshGardenSearchEnabled ?? this.macintoshGardenSearchEnabled,
+      threeDsBoot9Path: clearThreeDsBoot9Path
+          ? null
+          : (threeDsBoot9Path ?? this.threeDsBoot9Path),
+      threeDsSeeddbPath: clearThreeDsSeeddbPath
+          ? null
+          : (threeDsSeeddbPath ?? this.threeDsSeeddbPath),
+      biosFolderPath: clearBiosFolderPath
+          ? null
+          : (biosFolderPath ?? this.biosFolderPath),
+      biosRetrobiosEnabled: biosRetrobiosEnabled ?? this.biosRetrobiosEnabled,
+      biosIaItems: biosIaItems ?? this.biosIaItems,
+      biosUrlTemplates: biosUrlTemplates ?? this.biosUrlTemplates,
       isLoading: isLoading ?? this.isLoading,
     );
   }
+
+  BiosSourceSettings get biosSources => BiosSourceSettings(
+        retrobiosEnabled: biosRetrobiosEnabled,
+        iaItems: biosIaItems,
+        urlTemplates: biosUrlTemplates,
+      );
 
   String? getPathForPlatform(String platform) {
     return platformPaths[platform] ?? defaultDownloadPath;
@@ -115,7 +177,18 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
   static const String _keyDebridEnabled = 'debrid_enabled';
   static const String _keyDebridProviderId = 'debrid_provider_id';
   static const String _keyMetadataEnabled = 'metadata_enabled';
+  static const String _keyPs3DownloadRap = 'ps3_download_rap';
   static const String _keyVitaDownloadMode = 'vita_download_mode';
+  static const String _keyProwlarrSearchEnabled = 'prowlarr_search_enabled';
+  static const String _keyProwlarrBaseUrl = 'prowlarr_base_url';
+  static const String _keyMacintoshGardenSearchEnabled =
+      'macintosh_garden_search_enabled';
+  static const String _keyThreeDsBoot9Path = 'three_ds_boot9_path';
+  static const String _keyThreeDsSeeddbPath = 'three_ds_seeddb_path';
+  static const String _keyBiosFolderPath = 'bios_folder_path';
+  static const String _keyBiosRetrobiosEnabled = 'bios_retrobios_enabled';
+  static const String _keyBiosIaItems = 'bios_ia_items';
+  static const String _keyBiosUrlTemplates = 'bios_url_templates';
 
   SettingsNotifier() : super(const SettingsState()) {
     _loadSettings();
@@ -147,9 +220,22 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     final debridProviderId =
         prefs.getString(_keyDebridProviderId) ?? 'torbox';
     final metadataEnabled = prefs.getBool(_keyMetadataEnabled) ?? true;
+    final ps3DownloadRap = prefs.getBool(_keyPs3DownloadRap) ?? false;
     final vitaDownloadModeIndex = prefs.getInt(_keyVitaDownloadMode) ?? 0;
     final vitaDownloadMode = VitaDownloadMode.values[vitaDownloadModeIndex.clamp(
         0, VitaDownloadMode.values.length - 1)];
+    final prowlarrSearchEnabled =
+        prefs.getBool(_keyProwlarrSearchEnabled) ?? false;
+    final prowlarrBaseUrl = prefs.getString(_keyProwlarrBaseUrl) ?? '';
+    final macintoshGardenSearchEnabled =
+        prefs.getBool(_keyMacintoshGardenSearchEnabled) ?? false;
+    final threeDsBoot9Path = prefs.getString(_keyThreeDsBoot9Path);
+    final threeDsSeeddbPath = prefs.getString(_keyThreeDsSeeddbPath);
+    final biosFolderPath = prefs.getString(_keyBiosFolderPath);
+    final biosRetrobiosEnabled =
+        prefs.getBool(_keyBiosRetrobiosEnabled) ?? true;
+    final biosIaItems = prefs.getStringList(_keyBiosIaItems) ?? [];
+    final biosUrlTemplates = prefs.getStringList(_keyBiosUrlTemplates) ?? [];
 
     // Load platform-specific paths
     final platformPaths = <String, String>{};
@@ -178,7 +264,17 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       debridEnabled: debridEnabled,
       debridProviderId: debridProviderId,
       metadataEnabled: metadataEnabled,
+      ps3DownloadRap: ps3DownloadRap,
       vitaDownloadMode: vitaDownloadMode,
+      prowlarrSearchEnabled: prowlarrSearchEnabled,
+      prowlarrBaseUrl: prowlarrBaseUrl,
+      macintoshGardenSearchEnabled: macintoshGardenSearchEnabled,
+      threeDsBoot9Path: threeDsBoot9Path,
+      threeDsSeeddbPath: threeDsSeeddbPath,
+      biosFolderPath: biosFolderPath,
+      biosRetrobiosEnabled: biosRetrobiosEnabled,
+      biosIaItems: biosIaItems,
+      biosUrlTemplates: biosUrlTemplates,
       isLoading: false,
     );
   }
@@ -274,10 +370,99 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     state = state.copyWith(metadataEnabled: value);
   }
 
+  Future<void> setPs3DownloadRap(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyPs3DownloadRap, value);
+    state = state.copyWith(ps3DownloadRap: value);
+  }
+
   Future<void> setVitaDownloadMode(VitaDownloadMode mode) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_keyVitaDownloadMode, mode.index);
     state = state.copyWith(vitaDownloadMode: mode);
+  }
+
+  Future<void> setProwlarrSearchEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyProwlarrSearchEnabled, value);
+    state = state.copyWith(prowlarrSearchEnabled: value);
+  }
+
+  Future<void> setProwlarrBaseUrl(String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyProwlarrBaseUrl, value.trim());
+    state = state.copyWith(prowlarrBaseUrl: value.trim());
+  }
+
+  Future<void> setMacintoshGardenSearchEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyMacintoshGardenSearchEnabled, value);
+    state = state.copyWith(macintoshGardenSearchEnabled: value);
+  }
+
+  Future<void> setThreeDsBoot9Path(String? path) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    if (path == null) {
+      await prefs.remove(_keyThreeDsBoot9Path);
+      state = state.copyWith(clearThreeDsBoot9Path: true);
+    } else {
+      await prefs.setString(_keyThreeDsBoot9Path, path);
+      state = state.copyWith(threeDsBoot9Path: path);
+    }
+  }
+
+  Future<void> setThreeDsSeeddbPath(String? path) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    if (path == null) {
+      await prefs.remove(_keyThreeDsSeeddbPath);
+      state = state.copyWith(clearThreeDsSeeddbPath: true);
+    } else {
+      await prefs.setString(_keyThreeDsSeeddbPath, path);
+      state = state.copyWith(threeDsSeeddbPath: path);
+    }
+  }
+
+  Future<void> setBiosFolderPath(String? path) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    if (path == null) {
+      await prefs.remove(_keyBiosFolderPath);
+      state = state.copyWith(clearBiosFolderPath: true);
+    } else {
+      await prefs.setString(_keyBiosFolderPath, path);
+      state = state.copyWith(biosFolderPath: path);
+    }
+  }
+
+  Future<void> setBiosRetrobiosEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyBiosRetrobiosEnabled, value);
+    state = state.copyWith(biosRetrobiosEnabled: value);
+  }
+
+  /// Internet Archive item ids, one per entry; invalid ids are dropped.
+  Future<void> setBiosIaItems(List<String> items) async {
+    final cleaned = items
+        .map((i) => i.trim())
+        .where(BiosService.isValidIaItem)
+        .toSet()
+        .toList();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_keyBiosIaItems, cleaned);
+    state = state.copyWith(biosIaItems: cleaned);
+  }
+
+  /// https address templates; anything else is dropped.
+  Future<void> setBiosUrlTemplates(List<String> templates) async {
+    final cleaned = templates
+        .map((t) => t.trim())
+        .where((t) => t.startsWith('https://'))
+        .toList();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_keyBiosUrlTemplates, cleaned);
+    state = state.copyWith(biosUrlTemplates: cleaned);
   }
 
   Future<void> setMaxConcurrentDownloads(int value) async {
@@ -299,7 +484,17 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     await prefs.remove(_keyDebridEnabled);
     await prefs.remove(_keyDebridProviderId);
     await prefs.remove(_keyMetadataEnabled);
+    await prefs.remove(_keyPs3DownloadRap);
     await prefs.remove(_keyVitaDownloadMode);
+    await prefs.remove(_keyProwlarrSearchEnabled);
+    await prefs.remove(_keyProwlarrBaseUrl);
+    await prefs.remove(_keyMacintoshGardenSearchEnabled);
+    await prefs.remove(_keyThreeDsBoot9Path);
+    await prefs.remove(_keyThreeDsSeeddbPath);
+    await prefs.remove(_keyBiosFolderPath);
+    await prefs.remove(_keyBiosRetrobiosEnabled);
+    await prefs.remove(_keyBiosIaItems);
+    await prefs.remove(_keyBiosUrlTemplates);
 
     for (final key in prefs.getKeys().toList()) {
       if (key.startsWith(_keyPlatformPaths) ||

@@ -1,12 +1,15 @@
 export 'api_provider.dart';
+export 'bios_provider.dart';
 export 'debrid_provider.dart';
 export 'download_provider.dart';
 export 'favorites_provider.dart';
 export 'internet_archive_auth_provider.dart';
 export 'library_provider.dart';
+export 'macintosh_garden_provider.dart';
 export 'metadata_provider.dart';
 export 'navigation_provider.dart';
 export 'platforms_provider.dart';
+export 'prowlarr_provider.dart';
 export 'recently_viewed_provider.dart';
 export 'regions_provider.dart';
 export 'search_provider.dart';

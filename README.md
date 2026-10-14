@@ -24,6 +24,9 @@ Concept inspired by [pkgi-psp](https://github.com/bucanero/pkgi-psp), [Kekatsu-D
 - **Custom Download Paths** - Set default or per-platform download locations
 - **Internet Archive Support** - Persistent login for protected Internet Archive items
 - **Source Status** - See per-catalog health (online / down / unknown) in Settings
+- **BIOS and System Files** - See which BIOS, firmware and key files each system needs, which are in your BIOS folder, and fetch the missing ones from retrobios or the Internet Archive, checked by SHA-256 or MD5 (file list from [gamegrab-sources/droidtop-plugin-bios](https://github.com/gamegrab-sources/droidtop-plugin-bios))
+- **Live sources (opt-in)** - Prowlarr and Macintosh Garden results blended into search
+- **PS3 licences (opt-in)** - Fetch the matching RAP file with a PS3 game
 
 ## Quick Setup
 

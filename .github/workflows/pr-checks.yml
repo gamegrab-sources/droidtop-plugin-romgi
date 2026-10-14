@@ -116,14 +116,20 @@ jobs:
         run: |
           branch="${{ github.head_ref || github.ref_name }}"
           echo "safe_branch=${branch//\//-}" >> "$GITHUB_OUTPUT"
+          echo "app_version=$(sed -n 's/^version: *//p' pubspec.yaml)" >> "$GITHUB_OUTPUT"
 
       # Bumps android/app/revision.txt (read by build.gradle.kts to stamp
       # "-rN" onto versionName) and commits it back so it persists across
       # runs. [skip ci] keeps this commit from re-triggering the workflow.
       # Only runs on pushes to feature branches — main doesn't use this,
-      # and pull_request builds shouldn't mutate branch state.
+      # and pull_request builds shouldn't mutate branch state. Only in this
+      # repository: copies of these branches elsewhere (the droidtop plugin
+      # repo's upstream-* mirrors) must stay equal to the branch they copy,
+      # and a bump commit there makes their fast-forward sync fail.
       - name: Bump build revision
-        if: github.event_name == 'push' && github.ref_name != 'main'
+        if: >-
+          github.event_name == 'push' && github.ref_name != 'main' &&
+          github.repository == 'bi0shacker001/romgi'
         run: |
           cd android/app
           rev=$(( $(cat revision.txt 2>/dev/null || echo 0) + 1 ))
@@ -135,10 +141,20 @@ jobs:
           git push origin HEAD:${{ github.ref_name }}
 
       - name: Build debug APK
-        run: flutter build apk --debug
+        run: >
+          flutter build apk --debug
+          --dart-define=SCREENSCRAPER_DEV_ID=${{ secrets.SCREENSCRAPER_DEV_ID }}
+          --dart-define=SCREENSCRAPER_DEV_PASSWORD=${{ secrets.SCREENSCRAPER_DEV_PASSWORD }}
+          --dart-define=ROMGI_RELEASE_TAG=build-${{ steps.meta.outputs.safe_branch }}
+          --dart-define=ROMGI_BUILD_NUMBER=${{ github.run_number }}
 
       - name: Build release APK
-        run: flutter build apk --release
+        run: >
+          flutter build apk --release
+          --dart-define=SCREENSCRAPER_DEV_ID=${{ secrets.SCREENSCRAPER_DEV_ID }}
+          --dart-define=SCREENSCRAPER_DEV_PASSWORD=${{ secrets.SCREENSCRAPER_DEV_PASSWORD }}
+          --dart-define=ROMGI_RELEASE_TAG=build-${{ steps.meta.outputs.safe_branch }}
+          --dart-define=ROMGI_BUILD_NUMBER=${{ github.run_number }}
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
@@ -158,25 +174,35 @@ jobs:
       # a stable, easy-to-find download link instead of digging through
       # Actions run history — each push replaces this branch's release
       # in place rather than accumulating new ones. Skipped on pull_request
-      # runs (e.g. from forks) since those shouldn't publish anything.
+      # runs (e.g. from forks) since those shouldn't publish anything, and on
+      # ci/* scratch branches, which only exist to run these checks.
       - name: Rename APKs for release
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && !startsWith(github.ref_name, 'ci/')
         run: |
           cp build/app/outputs/flutter-apk/app-debug.apk "romgi-${{ steps.meta.outputs.safe_branch }}-debug.apk"
           cp build/app/outputs/flutter-apk/app-release.apk "romgi-${{ steps.meta.outputs.safe_branch }}-release.apk"
 
       - name: Publish branch release
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && !startsWith(github.ref_name, 'ci/')
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ steps.meta.outputs.safe_branch }}
           name: romgi (${{ steps.meta.outputs.safe_branch }}) — latest build
           prerelease: false
+          # Only main's build is the repository's "Latest" release; a branch
+          # build stays non-prerelease (for Obtainium) without taking it over.
+          make_latest: ${{ github.ref_name == 'main' && 'true' || 'false' }}
           body: |
             Automated build from ${{ github.sha }}. Replaced on every push to
             `${{ steps.meta.outputs.safe_branch }}` — not a stable release,
             but marked non-prerelease so update-tracking tools (e.g.
             Obtainium) pick it up without manual approval.
+
+            The in-app updater reads the two lines below (UpdateChannel in
+            lib/services/update_service.dart); keep their format.
+
+            romgi-build: ${{ github.run_number }}
+            romgi-version: ${{ steps.meta.outputs.app_version }}
           files: |
             romgi-${{ steps.meta.outputs.safe_branch }}-debug.apk
             romgi-${{ steps.meta.outputs.safe_branch }}-release.apk

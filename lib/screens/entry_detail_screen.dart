@@ -8,6 +8,7 @@ import '../services/download_service.dart';
 import '../services/link_resolver.dart';
 import '../utils/utils.dart';
 import '../widgets/widgets.dart';
+import 'bios_screen.dart';
 import 'internet_archive_login_screen.dart';
 
 final entryProvider = FutureProvider.family<RomEntry?, String>((
@@ -41,10 +42,20 @@ const Map<String, int> kKnownSourcePriority = {
 class EntryDetailScreen extends ConsumerWidget {
   final String slug;
 
-  const EntryDetailScreen({super.key, required this.slug});
+  /// A pre-built entry to render directly, skipping the local-catalog
+  /// fetch entirely — used for live (non-catalog) results, e.g. Prowlarr
+  /// search, whose slug doesn't exist in the shipped SQLite DB.
+  final RomEntry? liveEntry;
+
+  const EntryDetailScreen({super.key, required this.slug, this.liveEntry});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final live = liveEntry;
+    if (live != null) {
+      return Scaffold(body: _EntryDetailContent(entry: live));
+    }
+
     final entryAsync = ref.watch(entryProvider(slug));
 
     return Scaffold(
@@ -88,17 +99,22 @@ class _EntryDetailContentState extends ConsumerState<_EntryDetailContent> {
     super.initState();
     _scrollController.addListener(_onScroll);
 
-    // Track this entry as recently viewed
-    WidgetsBinding.instance.addPostFrameCallback((debugLabel) {
-      ref
-          .read(recentlyViewedProvider.notifier)
-          .addEntry(
-            slug: widget.entry.slug,
-            title: widget.entry.title,
-            platform: widget.entry.platform,
-            boxartUrl: widget.entry.boxartUrl,
-          );
-    });
+    // Track this entry as recently viewed — skipped for live
+    // results, whose slug doesn't exist in the local catalog, so
+    // revisiting it later from Recently Viewed would just hit
+    // "Entry not found".
+    if (!widget.entry.isLive) {
+      WidgetsBinding.instance.addPostFrameCallback((debugLabel) {
+        ref
+            .read(recentlyViewedProvider.notifier)
+            .addEntry(
+              slug: widget.entry.slug,
+              title: widget.entry.title,
+              platform: widget.entry.platform,
+              boxartUrl: widget.entry.boxartUrl,
+            );
+      });
+    }
   }
 
   @override
@@ -320,21 +336,27 @@ class _EntryDetailContentState extends ConsumerState<_EntryDetailContent> {
               ),
               const SizedBox(height: 16),
 
-              // Multi-disc set: offer to grab every disc + build an .m3u.
-              ref.watch(entryGroupProvider(entry.slug)).maybeWhen(
-                    data: (group) =>
-                        (group != null && group.isDisc && group.members.length > 1)
-                            ? _DiscGroupSection(entry: entry, group: group)
-                            : const SizedBox.shrink(),
-                    orElse: () => const SizedBox.shrink(),
-                  ),
+              // Multi-disc set / catalog metadata: neither concept applies
+              // to live results, whose slug isn't in the local
+              // catalog DB — skip the (otherwise harmless, just wasted)
+              // queries for those.
+              SystemFilesRow(platform: entry.platform),
 
-              ref.watch(gameMetadataProvider(entry.slug)).maybeWhen(
-                    data: (metadata) => (metadata == null || metadata.isEmpty)
-                        ? const SizedBox.shrink()
-                        : _MetadataCard(metadata: metadata),
-                    orElse: () => const SizedBox.shrink(),
-                  ),
+              if (!entry.isLive) ...[
+                ref.watch(entryGroupProvider(entry.slug)).maybeWhen(
+                      data: (group) =>
+                          (group != null && group.isDisc && group.members.length > 1)
+                              ? _DiscGroupSection(entry: entry, group: group)
+                              : const SizedBox.shrink(),
+                      orElse: () => const SizedBox.shrink(),
+                    ),
+                ref.watch(gameMetadataProvider(entry.slug)).maybeWhen(
+                      data: (metadata) => (metadata == null || metadata.isEmpty)
+                          ? const SizedBox.shrink()
+                          : _MetadataCard(metadata: metadata),
+                      orElse: () => const SizedBox.shrink(),
+                    ),
+              ],
 
               // Download links header
               Row(

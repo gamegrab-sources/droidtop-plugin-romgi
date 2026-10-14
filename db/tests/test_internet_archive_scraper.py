@@ -144,3 +144,73 @@ def test_extract_html_entities():
 def test_extract_empty_html():
     assert extract_entries('', _source(), 'nes', BASE_URL) == []
     assert extract_entries('<html></html>', _source(), 'nes', BASE_URL) == []
+
+
+# -- classic Mac (Macintosh Garden) extensions --------------------------------
+
+# The exact filter used for the `mac` platform in platforms.yml — handles
+# both plain "Name.sit" filenames and the compound "Name.toast_.sit"
+# (or even triple-wrapped "Name.smi_.sit_.hqx") pattern real Macintosh
+# Garden filenames use (inner disk-image/wrapper formats chained before an
+# outer compression/transport extension). Verified against ~2100 real
+# archive.org Macintosh Garden filenames (99.86% clean titles) before
+# being added to platforms.yml — see the branch's PR description for the
+# analysis.
+_MAC_FILTER = (
+    r'(?i)^(.*?)(?:\.[A-Za-z0-9]+_)*'
+    r'\.(sit|sitx|zip|dmg|iso|toast|cdr|bin|cue|dsk|hqx|img)$'
+)
+
+
+def test_extract_recognizes_mac_extensions():
+    html = (
+        '<table>'
+        '<tr><td><a href="Game.sit">Game.sit</a></td><td></td><td>1M</td></tr>'
+        '<tr><td><a href="App.dmg">App.dmg</a></td><td></td><td>2M</td></tr>'
+        '<tr><td><a href="Disc.toast">Disc.toast</a></td><td></td><td>3M</td></tr>'
+        '<tr><td><a href="Image.cdr">Image.cdr</a></td><td></td><td>4M</td></tr>'
+        '<tr><td><a href="Floppy.dsk">Floppy.dsk</a></td><td></td><td>5M</td></tr>'
+        '<tr><td><a href="Archive.sitx">Archive.sitx</a></td><td></td><td>6M</td></tr>'
+        '<tr><td><a href="Encoded.hqx">Encoded.hqx</a></td><td></td><td>7M</td></tr>'
+        '<tr><td><a href="Disk.img">Disk.img</a></td><td></td><td>8M</td></tr>'
+        '</table>'
+    )
+    entries = extract_entries(html, _source(filt=_MAC_FILTER), 'mac', BASE_URL)
+    titles = {e['title'] for e in entries}
+    assert titles == {
+        'Game', 'App', 'Disc', 'Image', 'Floppy', 'Archive', 'Encoded', 'Disk',
+    }
+
+
+def test_extract_mac_compound_extension_title():
+    # Real Macintosh Garden naming: an inner disk-image extension wrapped in
+    # an outer compression extension, joined with an underscore.
+    html = '<table><tr><td><a href="Absolute_Solitaire_CD.toast_.sit">x</a></td><td></td><td>1M</td></tr></table>'
+    entries = extract_entries(html, _source(filt=_MAC_FILTER), 'mac', BASE_URL)
+    assert len(entries) == 1
+    assert entries[0]['title'] == 'Absolute_Solitaire_CD'
+
+
+def test_extract_mac_triple_wrapped_extension_title():
+    # Some real files chain three wrappers, e.g. self-extracting archive ->
+    # StuffIt -> BinHex.
+    html = '<table><tr><td><a href="MacWrite_Pro_1.5v3.smi_.sit_.hqx">x</a></td><td></td><td>1M</td></tr></table>'
+    entries = extract_entries(html, _source(filt=_MAC_FILTER), 'mac', BASE_URL)
+    assert len(entries) == 1
+    assert entries[0]['title'] == 'MacWrite_Pro_1.5v3'
+
+
+def test_extract_mac_filter_ignores_non_mac_junk():
+    # .torrent/.xml/.sqlite/.jpg metadata files IA collections carry alongside
+    # the real content must not show up as entries.
+    html = (
+        '<table>'
+        '<tr><td><a href="Game.sit">Game.sit</a></td><td></td><td>1M</td></tr>'
+        '<tr><td><a href="meta.sqlite">meta.sqlite</a></td><td></td><td>10K</td></tr>'
+        '<tr><td><a href="listing.torrent">listing.torrent</a></td><td></td><td>1K</td></tr>'
+        '<tr><td><a href="cover.jpg">cover.jpg</a></td><td></td><td>50K</td></tr>'
+        '</table>'
+    )
+    entries = extract_entries(html, _source(filt=_MAC_FILTER), 'mac', BASE_URL)
+    assert len(entries) == 1
+    assert entries[0]['title'] == 'Game'

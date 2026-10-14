@@ -3,6 +3,8 @@ package com.caprado.romgi
 import android.content.Intent
 import android.webkit.CookieManager
 import androidx.core.content.FileProvider
+import com.caprado.romgi.ncch_decrypt.NcchDecryptHostApi
+import com.caprado.romgi.ncch_decrypt.NcchDecryptServiceImpl
 import com.caprado.romgi.seven_zip.SevenZipHostApi
 import com.caprado.romgi.seven_zip.SevenZipServiceImpl
 import com.caprado.romgi.torrent.TorrentHostApi
@@ -28,6 +30,8 @@ class MainActivity : FlutterActivity() {
             flutterEngine.dartExecutor.binaryMessenger,
         )
         SevenZipHostApi.setUp(flutterEngine.dartExecutor.binaryMessenger, sevenZipService)
+
+        NcchDecryptHostApi.setUp(flutterEngine.dartExecutor.binaryMessenger, NcchDecryptServiceImpl())
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, OPEN_CHANNEL)
             .setMethodCallHandler { call, result ->

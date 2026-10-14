@@ -1658,3 +1658,72 @@ pip:
   type: Game
   parsers:
     no_intro: {}
+mac:
+- source: internet_archive
+  format: mac
+  urls:
+  - https://archive.org/download/Macintosh_Garden_Games_Collection_A
+  - https://archive.org/download/Macintosh_Garden_Games_Collection_B
+  - https://archive.org/download/Macintosh_Garden_Games_Collection_C
+  - https://archive.org/download/Macintosh_Garden_Games_Collection_D
+  - https://archive.org/download/Macintosh_Garden_Games_Collection_E
+  - https://archive.org/download/Macintosh_Garden_Games_Collection_F
+  - https://archive.org/download/Macintosh_Garden_Games_Collection_G
+  - https://archive.org/download/Macintosh_Garden_Games_Collection_H
+  - https://archive.org/download/Macintosh_Garden_Games_Collection_I
+  - https://archive.org/download/Macintosh_Garden_Games_Collection_J
+  - https://archive.org/download/Macintosh_Garden_Games_Collection_K
+  - https://archive.org/download/Macintosh_Garden_Games_Collection_L
+  - https://archive.org/download/Macintosh_Garden_Games_Collection_M
+  - https://archive.org/download/Macintosh_Garden_Games_Collection_N
+  - https://archive.org/download/Macintosh_Garden_Games_Collection_O
+  - https://archive.org/download/Macintosh_Garden_Games_Collection_P
+  - https://archive.org/download/Macintosh_Garden_Games_Collection_Q
+  - https://archive.org/download/Macintosh_Garden_Games_Collection_R
+  - https://archive.org/download/Macintosh_Garden_Games_Collection_S
+  - https://archive.org/download/Macintosh_Garden_Games_Collection_T
+  - https://archive.org/download/Macintosh_Garden_Games_Collection_U
+  - https://archive.org/download/Macintosh_Garden_Games_Collection_V
+  - https://archive.org/download/Macintosh_Garden_Games_Collection_W
+  - https://archive.org/download/Macintosh_Garden_Games_Collection_X
+  - https://archive.org/download/Macintosh_Garden_Games_Collection_Y
+  - https://archive.org/download/Macintosh_Garden_Games_Collection_Z
+  - https://archive.org/download/Macintosh_Garden_Games_Collection_0
+  filter: (?i)^(.*?)(?:\.[A-Za-z0-9]+_)*\.(sit|sitx|zip|dmg|iso|toast|cdr|bin|cue|dsk|hqx|img)$
+  type: Game
+  parsers:
+    no_intro: {}
+- source: internet_archive
+  format: mac
+  urls:
+  - https://archive.org/download/Macintosh_Garden_Apps_Collection_A
+  - https://archive.org/download/Macintosh_Garden_Apps_Collection_B
+  - https://archive.org/download/Macintosh_Garden_Apps_Collection_C
+  - https://archive.org/download/Macintosh_Garden_Apps_Collection_D
+  - https://archive.org/download/Macintosh_Garden_Apps_Collection_E
+  - https://archive.org/download/Macintosh_Garden_Apps_Collection_F
+  - https://archive.org/download/Macintosh_Garden_Apps_Collection_G
+  - https://archive.org/download/Macintosh_Garden_Apps_Collection_H
+  - https://archive.org/download/Macintosh_Garden_Apps_Collection_I
+  - https://archive.org/download/Macintosh_Garden_Apps_Collection_J
+  - https://archive.org/download/Macintosh_Garden_Apps_Collection_K
+  - https://archive.org/download/Macintosh_Garden_Apps_Collection_L
+  - https://archive.org/download/Macintosh_Garden_Apps_Collection_M
+  - https://archive.org/download/Macintosh_Garden_Apps_Collection_N
+  - https://archive.org/download/Macintosh_Garden_Apps_Collection_O
+  - https://archive.org/download/Macintosh_Garden_Apps_Collection_P
+  - https://archive.org/download/Macintosh_Garden_Apps_Collection_Q
+  - https://archive.org/download/Macintosh_Garden_Apps_Collection_R
+  - https://archive.org/download/Macintosh_Garden_Apps_Collection_S
+  - https://archive.org/download/Macintosh_Garden_Apps_Collection_T
+  - https://archive.org/download/Macintosh_Garden_Apps_Collection_U
+  - https://archive.org/download/Macintosh_Garden_Apps_Collection_V
+  - https://archive.org/download/Macintosh_Garden_Apps_Collection_W
+  - https://archive.org/download/Macintosh_Garden_Apps_Collection_X
+  - https://archive.org/download/Macintosh_Garden_Apps_Collection_Y
+  - https://archive.org/download/Macintosh_Garden_Apps_Collection_Z
+  - https://archive.org/download/Macintosh_Garden_Apps_Collection_0
+  filter: (?i)^(.*?)(?:\.[A-Za-z0-9]+_)*\.(sit|sitx|zip|dmg|iso|toast|cdr|bin|cue|dsk|hqx|img)$
+  type: App
+  parsers:
+    no_intro: {}

@@ -1,3 +1,4 @@
+export 'bios_screen.dart';
 export 'browse_screen.dart';
 export 'database_setup_screen.dart';
 export 'downloads_screen.dart';

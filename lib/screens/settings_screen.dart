@@ -8,6 +8,7 @@ import '../services/metadata/metadata_provider.dart';
 import '../services/rom_database_service.dart';
 import '../services/storage_service.dart';
 import '../utils/utils.dart';
+import 'bios_screen.dart';
 import 'internet_archive_login_screen.dart';
 import 'sources_screen.dart';
 
@@ -101,8 +102,92 @@ class SettingsScreen extends ConsumerWidget {
 
                 const Divider(height: 32),
 
+                _SectionHeader(title: 'PS3'),
+
+                SwitchListTile(
+                  secondary: const Icon(Icons.key),
+                  title: const Text('Download License with Game'),
+                  subtitle: const Text(
+                    'Also fetch the matching RAP license file and keep it '
+                    'with the pkg in a per-game folder, ready for RPCS3',
+                  ),
+                  value: settings.ps3DownloadRap,
+                  onChanged: (value) {
+                    ref
+                        .read(settingsProvider.notifier)
+                        .setPs3DownloadRap(value);
+                  },
+                ),
+
+                const Divider(height: 32),
+
+                _SectionHeader(title: '3DS Decryption'),
+
+                ListTile(
+                  leading: const Icon(Icons.key),
+                  title: const Text('boot9.bin'),
+                  subtitle: Text(
+                    settings.threeDsBoot9Path ??
+                        'Not set — uses boot9.bin from your BIOS folder when '
+                            'it is there (BIOS and System Files below); '
+                            'required to decrypt 3DS games for emulators '
+                            'like Azahar that refuse to decrypt themselves',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: settings.threeDsBoot9Path != null
+                      ? IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () {
+                            ref
+                                .read(settingsProvider.notifier)
+                                .setThreeDsBoot9Path(null);
+                          },
+                        )
+                      : null,
+                  onTap: () => _pickBoot9File(context, ref),
+                ),
+
+                ListTile(
+                  leading: const Icon(Icons.vpn_key),
+                  title: const Text('seeddb.bin'),
+                  subtitle: Text(
+                    settings.threeDsSeeddbPath ??
+                        'Not set — uses seeddb.bin from your BIOS folder '
+                            'when it is there; only needed for the subset of '
+                            '3DS games '
+                            'that use seed crypto (games released after a '
+                            'later system update)',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: settings.threeDsSeeddbPath != null
+                      ? IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () {
+                            ref
+                                .read(settingsProvider.notifier)
+                                .setThreeDsSeeddbPath(null);
+                          },
+                        )
+                      : null,
+                  onTap: () => _pickSeeddbFile(context, ref),
+                ),
+
+                const Divider(height: 32),
+
+                _SectionHeader(title: 'BIOS and System Files'),
+                const _BiosSection(),
+
+                const Divider(height: 32),
+
                 _SectionHeader(title: 'Debrid Service'),
                 const _DebridSection(),
+
+                const Divider(height: 32),
+
+                _SectionHeader(title: 'Prowlarr'),
+                const _ProwlarrSection(),
 
                 const Divider(height: 32),
 
@@ -394,6 +479,21 @@ class SettingsScreen extends ConsumerWidget {
                   ),
                 ),
 
+                SwitchListTile(
+                  secondary: const Icon(Icons.apple),
+                  title: const Text('Search Macintosh Garden'),
+                  subtitle: const Text(
+                    'Include classic Mac apps and games (live, via Internet '
+                    'Archive) alongside catalog results',
+                  ),
+                  value: settings.macintoshGardenSearchEnabled,
+                  onChanged: (value) {
+                    ref
+                        .read(settingsProvider.notifier)
+                        .setMacintoshGardenSearchEnabled(value);
+                  },
+                ),
+
                 const Divider(height: 32),
 
                 _SectionHeader(title: 'About'),
@@ -407,10 +507,10 @@ class SettingsScreen extends ConsumerWidget {
                 ListTile(
                   leading: const Icon(Icons.code),
                   title: const Text('Source Code'),
-                  subtitle: const Text('github.com/caprado/romgi'),
+                  subtitle: const Text('github.com/bi0shacker001/romgi'),
                   trailing: const Icon(Icons.open_in_new),
                   onTap: () => launchUrl(
-                    Uri.parse('https://github.com/caprado/romgi'),
+                    Uri.parse('https://github.com/bi0shacker001/romgi'),
                     mode: LaunchMode.externalApplication,
                   ),
                 ),
@@ -545,6 +645,24 @@ class SettingsScreen extends ConsumerWidget {
       }
     }
   }
+
+  Future<void> _pickBoot9File(BuildContext context, WidgetRef ref) async {
+    final result = await FilePicker.platform.pickFiles();
+    final path = result?.files.single.path;
+
+    if (path != null) {
+      ref.read(settingsProvider.notifier).setThreeDsBoot9Path(path);
+    }
+  }
+
+  Future<void> _pickSeeddbFile(BuildContext context, WidgetRef ref) async {
+    final result = await FilePicker.platform.pickFiles();
+    final path = result?.files.single.path;
+
+    if (path != null) {
+      ref.read(settingsProvider.notifier).setThreeDsSeeddbPath(path);
+    }
+  }
 }
 
 class _SectionHeader extends StatelessWidget {
@@ -605,6 +723,7 @@ class _UpdateTile extends ConsumerWidget {
           trailing: _buildTrailingWidget(context, ref, updateState),
           onTap:
               updateState.status == UpdateStatus.idle ||
+                  updateState.status == UpdateStatus.upToDate ||
                   updateState.status == UpdateStatus.error
               ? () => ref.read(updateProvider.notifier).checkForUpdate()
               : null,
@@ -624,6 +743,10 @@ class _UpdateTile extends ConsumerWidget {
         return Icons.system_update;
       case UpdateStatus.checking:
         return Icons.refresh;
+      case UpdateStatus.upToDate:
+        return Icons.check_circle_outline;
+      case UpdateStatus.unavailable:
+        return Icons.update_disabled;
       case UpdateStatus.available:
         return Icons.download;
       case UpdateStatus.downloading:
@@ -653,6 +776,10 @@ class _UpdateTile extends ConsumerWidget {
         return 'Check for Updates';
       case UpdateStatus.checking:
         return 'Checking for Updates...';
+      case UpdateStatus.upToDate:
+        return 'Up to Date';
+      case UpdateStatus.unavailable:
+        return 'Updates Not Available';
       case UpdateStatus.available:
         return 'Update Available';
       case UpdateStatus.downloading:
@@ -670,6 +797,10 @@ class _UpdateTile extends ConsumerWidget {
         return 'Tap to check for new versions';
       case UpdateStatus.checking:
         return 'Please wait...';
+      case UpdateStatus.upToDate:
+        return 'This is the newest build. Tap to check again';
+      case UpdateStatus.unavailable:
+        return 'This build has no update channel; whatever installed it updates it';
       case UpdateStatus.available:
         return 'Version ${state.availableUpdate?.version} is available';
       case UpdateStatus.downloading:
@@ -714,6 +845,8 @@ class _UpdateTile extends ConsumerWidget {
           icon: const Icon(Icons.refresh),
           onPressed: () => ref.read(updateProvider.notifier).checkForUpdate(),
         );
+      case UpdateStatus.unavailable:
+        return null;
       default:
         return const Icon(Icons.chevron_right);
     }
@@ -1311,6 +1444,209 @@ class _MetadataProviderTileState extends ConsumerState<_MetadataProviderTile> {
   }
 }
 
+class _ProwlarrSection extends ConsumerStatefulWidget {
+  const _ProwlarrSection();
+
+  @override
+  ConsumerState<_ProwlarrSection> createState() => _ProwlarrSectionState();
+}
+
+class _ProwlarrSectionState extends ConsumerState<_ProwlarrSection> {
+  final _urlController = TextEditingController();
+  final _keyController = TextEditingController();
+  bool _obscure = true;
+  bool _testing = false;
+  String? _message;
+  bool? _hasKey;
+
+  @override
+  void initState() {
+    super.initState();
+    _urlController.text = ref.read(settingsProvider).prowlarrBaseUrl;
+    ref.read(prowlarrServiceProvider).getApiKey().then((key) {
+      if (mounted) setState(() => _hasKey = key != null && key.isNotEmpty);
+    });
+  }
+
+  @override
+  void dispose() {
+    _urlController.dispose();
+    _keyController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveUrl() async {
+    await ref
+        .read(settingsProvider.notifier)
+        .setProwlarrBaseUrl(_urlController.text);
+    if (mounted) setState(() => _message = 'Base URL saved');
+  }
+
+  Future<void> _saveKey() async {
+    final key = _keyController.text.trim();
+    if (key.isEmpty) return;
+    await ref.read(prowlarrServiceProvider).setApiKey(key);
+    _keyController.clear();
+    if (mounted) {
+      setState(() {
+        _hasKey = true;
+        _message = 'API key saved';
+      });
+    }
+  }
+
+  Future<void> _clear() async {
+    await ref.read(prowlarrServiceProvider).clearApiKey();
+    if (mounted) {
+      setState(() {
+        _hasKey = false;
+        _message = 'API key cleared';
+      });
+    }
+  }
+
+  Future<void> _test() async {
+    setState(() {
+      _testing = true;
+      _message = null;
+    });
+    final baseUrl = ref.read(settingsProvider).prowlarrBaseUrl;
+    final apiKey = await ref.read(prowlarrServiceProvider).getApiKey();
+    String result;
+    if (baseUrl.isEmpty || apiKey == null || apiKey.isEmpty) {
+      result = 'Set a base URL and API key first';
+    } else {
+      try {
+        await ref.read(prowlarrServiceProvider).search(
+              baseUrl: baseUrl,
+              apiKey: apiKey,
+              query: 'test',
+              limit: 1,
+            );
+        result = 'Connected successfully';
+      } catch (e) {
+        result = 'Connection failed: $e';
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _testing = false;
+      _message = result;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = ref.watch(settingsProvider);
+
+    return Column(
+      children: [
+        SwitchListTile(
+          secondary: const Icon(Icons.travel_explore),
+          title: const Text('Search Prowlarr'),
+          subtitle: const Text(
+            'Include live torrent results from your Prowlarr indexers when '
+            'searching (needs a debrid provider above to actually download '
+            'them without leeching)',
+          ),
+          value: settings.prowlarrSearchEnabled,
+          onChanged: (value) => ref
+              .read(settingsProvider.notifier)
+              .setProwlarrSearchEnabled(value),
+        ),
+        if (settings.prowlarrSearchEnabled) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: TextField(
+              controller: _urlController,
+              autocorrect: false,
+              enableSuggestions: false,
+              decoration: const InputDecoration(
+                labelText: 'Prowlarr base URL',
+                helperText: 'e.g. http://localhost:9696',
+                border: OutlineInputBorder(),
+              ),
+              onSubmitted: (_) => _saveUrl(),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: TextField(
+              controller: _keyController,
+              obscureText: _obscure,
+              autocorrect: false,
+              enableSuggestions: false,
+              decoration: InputDecoration(
+                labelText: 'API key',
+                border: const OutlineInputBorder(),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                      _obscure ? Icons.visibility : Icons.visibility_off),
+                  onPressed: () => setState(() => _obscure = !_obscure),
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                FilledButton(
+                    onPressed: _saveUrl, child: const Text('Save URL')),
+                const SizedBox(width: 8),
+                FilledButton(
+                    onPressed: _saveKey, child: const Text('Save key')),
+                const SizedBox(width: 8),
+                OutlinedButton(
+                  onPressed: _testing ? null : _test,
+                  child: _testing
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Test'),
+                ),
+                const Spacer(),
+                if (_hasKey == true)
+                  TextButton(onPressed: _clear, child: const Text('Clear')),
+              ],
+            ),
+          ),
+          if (_hasKey != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: Row(
+                children: [
+                  Icon(
+                    _hasKey! ? Icons.check_circle : Icons.info_outline,
+                    size: 16,
+                    color: _hasKey!
+                        ? Colors.green
+                        : Theme.of(context).colorScheme.outline,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    _hasKey! ? 'API key saved' : 'No API key saved',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+          if (_message != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text(
+                _message!,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+        ],
+      ],
+    );
+  }
+}
+
 class _DebridSection extends ConsumerStatefulWidget {
   const _DebridSection();
 
@@ -1481,5 +1817,147 @@ class _DebridSectionState extends ConsumerState<_DebridSection> {
         ],
       ],
     );
+  }
+}
+
+/// Where BIOS and system files go and where they come from: the options of
+/// the gamegrab-sources BIOS plugin, with its defaults.
+class _BiosSection extends ConsumerWidget {
+  const _BiosSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+    final folder = ref.watch(biosFolderProvider).valueOrNull;
+
+    return Column(
+      children: [
+        ListTile(
+          leading: const Icon(Icons.memory),
+          title: const Text('BIOS files by system'),
+          subtitle: const Text(
+            'See which BIOS, firmware and key files each system needs, '
+            'which are in your BIOS folder, and get the missing ones',
+          ),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const BiosScreen()),
+          ),
+        ),
+        ListTile(
+          leading: const Icon(Icons.folder_special),
+          title: const Text('BIOS folder'),
+          subtitle: Text(
+            settings.biosFolderPath ??
+                '${folder ?? 'bios in the download folder'} (default). Point '
+                    'it at RetroArch\'s system folder or your emulator\'s.',
+          ),
+          trailing: settings.biosFolderPath != null
+              ? IconButton(
+                  icon: const Icon(Icons.clear),
+                  onPressed: () => ref
+                      .read(settingsProvider.notifier)
+                      .setBiosFolderPath(null),
+                )
+              : null,
+          onTap: () async {
+            final result = await FilePicker.platform.getDirectoryPath();
+            if (result != null) {
+              await ref.read(settingsProvider.notifier).setBiosFolderPath(result);
+            }
+          },
+        ),
+        SwitchListTile(
+          secondary: const Icon(Icons.cloud_download),
+          title: const Text('Use retrobios'),
+          subtitle: const Text(
+            'Single files on GitHub, each checked by SHA-256 after download',
+          ),
+          value: settings.biosRetrobiosEnabled,
+          onChanged: (value) => ref
+              .read(settingsProvider.notifier)
+              .setBiosRetrobiosEnabled(value),
+        ),
+        ListTile(
+          leading: const Icon(Icons.account_balance),
+          title: const Text('More Internet Archive items'),
+          subtitle: Text(
+            settings.biosIaItems.isEmpty
+                ? 'None. Add item ids whose files should be offered when their '
+                    'MD5 or name matches a needed file'
+                : settings.biosIaItems.join(', '),
+          ),
+          onTap: () => _editList(
+            context,
+            title: 'Internet Archive items',
+            hint: 'One item id per line',
+            values: settings.biosIaItems,
+            onSave: (values) =>
+                ref.read(settingsProvider.notifier).setBiosIaItems(values),
+          ),
+        ),
+        ListTile(
+          leading: const Icon(Icons.link),
+          title: const Text('Your own addresses'),
+          subtitle: Text(
+            settings.biosUrlTemplates.isEmpty
+                ? 'None. https address templates where {file}, {system} and '
+                    '{md5} stand for the file name, system and its MD5'
+                : settings.biosUrlTemplates.join('\n'),
+          ),
+          onTap: () => _editList(
+            context,
+            title: 'Your own addresses',
+            hint: 'One https address per line, e.g.\n'
+                'https://example.org/bios/{system}/{file}',
+            values: settings.biosUrlTemplates,
+            onSave: (values) => ref
+                .read(settingsProvider.notifier)
+                .setBiosUrlTemplates(values),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _editList(
+    BuildContext context, {
+    required String title,
+    required String hint,
+    required List<String> values,
+    required Future<void> Function(List<String>) onSave,
+  }) async {
+    final controller = TextEditingController(text: values.join('\n'));
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: controller,
+          minLines: 3,
+          maxLines: 8,
+          decoration: InputDecoration(hintText: hint),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (saved == true) {
+      await onSave(controller.text
+          .split('\n')
+          .map((line) => line.trim())
+          .where((line) => line.isNotEmpty)
+          .toList());
+    }
+    controller.dispose();
   }
 }

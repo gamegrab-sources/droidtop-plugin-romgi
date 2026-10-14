@@ -1,3 +1,4 @@
+export 'bios_service.dart';
 export 'database_service.dart';
 export 'debrid/debrid_provider.dart';
 export 'debrid/debrid_registry.dart';
@@ -7,9 +8,12 @@ export 'game_metadata_service.dart';
 export 'host_adapter.dart';
 export 'internet_archive_auth_manager.dart';
 export 'link_resolver.dart';
+export 'live_search_source.dart';
+export 'macintosh_garden_service.dart';
 export 'metadata/metadata_provider.dart';
 export 'metadata/metadata_registry.dart';
 export 'notification_service.dart';
+export 'prowlarr_service.dart';
 export 'rom_database_service.dart';
 export 'seven_zip_service.dart';
 export 'sources_service.dart';

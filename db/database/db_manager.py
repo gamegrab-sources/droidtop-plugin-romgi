@@ -74,7 +74,8 @@ PLATFORMS = {
     'cdi': {'brand': 'Philips', 'name': 'CD-i'},
     'fmt': {'brand': 'Fujitsu', 'name': 'FM Towns'},
     'ngcd': {'brand': 'SNK', 'name': 'Neo Geo CD'},
-    'pip': {'brand': 'Apple-Bandai', 'name': 'Pippin'}
+    'pip': {'brand': 'Apple-Bandai', 'name': 'Pippin'},
+    'mac': {'brand': 'Apple', 'name': 'Classic Macintosh'}
 }
 
 REGIONS = {

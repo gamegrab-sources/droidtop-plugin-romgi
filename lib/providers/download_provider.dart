@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/models.dart';
 import '../services/services.dart';
 import 'api_provider.dart';
+import 'bios_provider.dart';
 import 'debrid_provider.dart';
 import 'internet_archive_auth_provider.dart';
 import 'library_provider.dart';
@@ -308,7 +310,23 @@ final downloadProvider = StateNotifierProvider<DownloadNotifier, DownloadState>(
         debridEnabled:
             settings.debridEnabled && debridService.isConfiguredSync(),
       );
+  service.getPs3DownloadRap = () => settings.ps3DownloadRap;
   service.getVitaDownloadMode = () => settings.vitaDownloadMode;
+  service.getThreeDsBoot9Path = () => settings.threeDsBoot9Path;
+  service.getThreeDsSeeddbPath = () => settings.threeDsSeeddbPath;
+  service.findThreeDsSystemFile = (fileName) async {
+    try {
+      final index = await ref.read(biosIndexProvider.future);
+      final files = index.systems['3ds']?.files ?? const <BiosFile>[];
+      final matches = files.where((f) => f.name == fileName);
+      if (matches.isEmpty) return null;
+      final folder = await ref.read(biosFolderProvider.future);
+      final path = BiosService.targetPath(folder, matches.first);
+      return await File(path).exists() ? path : null;
+    } catch (_) {
+      return null;
+    }
+  };
   final notifier = DownloadNotifier(
     service,
     maxConcurrentDownloads: settings.maxConcurrentDownloads,

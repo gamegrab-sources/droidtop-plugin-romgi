@@ -15,6 +15,7 @@ import 'database_service.dart';
 import 'debrid_service.dart';
 import 'host_adapter.dart';
 import 'link_resolver.dart';
+import 'ncch_decrypt_service.dart';
 import 'notification_service.dart';
 import 'playlist_writer.dart';
 import 'rom_database_service.dart';
@@ -92,10 +93,19 @@ class DownloadService {
   final HostAdapterRegistry _adapters;
   final TorrentService _torrents;
   final SevenZipService _sevenZip;
+  final NcchDecryptService _ncchDecrypt;
   final DebridService? _debrid;
   late final PlaylistWriter _playlistWriter;
   bool Function(String platform) shouldExtractForPlatform = (_) => true;
+  bool Function() getPs3DownloadRap = () => false;
   VitaDownloadMode Function() getVitaDownloadMode = () => VitaDownloadMode.pkgOnly;
+  String? Function() getThreeDsBoot9Path = () => null;
+  String? Function() getThreeDsSeeddbPath = () => null;
+
+  /// A 3DS system file (`boot9.bin`, `seeddb.bin`) in the BIOS folder, used
+  /// when no file was picked for it in Settings.
+  Future<String?> Function(String fileName) findThreeDsSystemFile =
+      (_) async => null;
   final Dio _dio;
   Dio? _nativeDio;
   final _uuid = const Uuid();
@@ -141,6 +151,7 @@ class DownloadService {
     required HostAdapterRegistry adapters,
     required TorrentService torrents,
     required SevenZipService sevenZip,
+    NcchDecryptService? ncchDecrypt,
     DebridService? debrid,
     Dio? dio,
   })  : _db = db,
@@ -150,6 +161,7 @@ class DownloadService {
         _adapters = adapters,
         _torrents = torrents,
         _sevenZip = sevenZip,
+        _ncchDecrypt = ncchDecrypt ?? NcchDecryptService(),
         _debrid = debrid,
         _dio = dio ?? Dio() {
     _playlistWriter = PlaylistWriter(
@@ -626,6 +638,10 @@ class DownloadService {
       // Retry logic for transient SSL/connection errors
       const maxRetries = 3;
       var retryCount = 0;
+      // Catalog sizes can be approximations (IA lists human-readable
+      // sizes), so completion is verified against the server's
+      // Content-Length instead.
+      var serverExpectedSize = 0;
       while (true) {
         try {
           // IA redirects downloads to CDN nodes (e.g. dn721009.ca.archive.org).
@@ -663,6 +679,9 @@ class DownloadService {
               final actualReceived = resumeOffset + received;
               final actualTotal =
                   total > 0 ? resumeOffset + total : task.link.size;
+              if (total > 0) {
+                serverExpectedSize = resumeOffset + total;
+              }
               final progress =
                   actualTotal > 0 ? actualReceived / actualTotal : 0.0;
 
@@ -739,13 +758,13 @@ class DownloadService {
       }
 
       final finalSize = await File(downloadPath).length();
-      if (task.link.size > 0 && finalSize != task.link.size) {
+      if (serverExpectedSize > 0 && finalSize != serverExpectedSize) {
         try {
           await File(downloadPath).delete();
         } catch (_) {}
         updatedTask = updatedTask.copyWith(
           status: DownloadStatus.failed,
-          error: 'Download incomplete ($finalSize of ${task.link.size} bytes)',
+          error: 'Download incomplete ($finalSize of $serverExpectedSize bytes)',
         );
         await _db.updateDownload(updatedTask);
         _downloadController.add(updatedTask);
@@ -975,6 +994,7 @@ class DownloadService {
       try {
         final extractedPath = await _extractArchive(downloadPath, task.platform);
         await File(downloadPath).delete();
+        await _maybeDecrypt3ds(extractedPath, task.platform);
         updatedTask = updatedTask.copyWith(
           status: DownloadStatus.completed,
           progress: 1.0,
@@ -989,7 +1009,10 @@ class DownloadService {
         );
       }
     } else {
-      final finalPath = await _maybeHandleVitaLicense(updatedTask, downloadPath);
+      final finalPath = await _maybeHandleVitaLicense(
+        updatedTask,
+        await _maybeHandlePs3License(updatedTask, downloadPath),
+      );
       updatedTask = updatedTask.copyWith(
         status: DownloadStatus.completed,
         progress: 1.0,
@@ -1074,12 +1097,16 @@ class DownloadService {
         try {
           finalPath = await _extractArchive(destPath, task.platform);
           await File(destPath).delete();
+          await _maybeDecrypt3ds(finalPath, task.platform);
         } catch (_) {
           await _failTask(task, 'Extraction failed — the archive may be corrupt');
           return;
         }
       } else if (existingPath == destPath) {
-        finalPath = await _maybeHandleVitaLicense(task, destPath);
+        finalPath = await _maybeHandleVitaLicense(
+          task,
+          await _maybeHandlePs3License(task, destPath),
+        );
       }
       final completed = task.copyWith(
         status: DownloadStatus.completed,
@@ -1263,6 +1290,7 @@ class DownloadService {
       try {
         finalPath = await _extractArchive(dest, task.platform);
         await File(dest).delete();
+        await _maybeDecrypt3ds(finalPath, task.platform);
       } catch (_) {
         await _failTorrentTask(
           task,
@@ -1272,7 +1300,10 @@ class DownloadService {
         return;
       }
     } else {
-      finalPath = await _maybeHandleVitaLicense(task, dest);
+      finalPath = await _maybeHandleVitaLicense(
+        task,
+        await _maybeHandlePs3License(task, dest),
+      );
     }
 
     final completed = task.copyWith(
@@ -1564,6 +1595,46 @@ class DownloadService {
       await _db.updateDownload(updated);
       _downloadController.add(updated);
       _processQueue();
+    }
+  }
+
+  bool _isPs3Pkg(DownloadTask task) =>
+      task.platform == 'ps3' &&
+      task.link.filename.toLowerCase().endsWith('.pkg');
+
+  /// After a PS3 pkg finishes downloading, fetch the sibling RAP license
+  /// link (if the setting is on) and keep both files together in a
+  /// per-game subfolder — RPCS3 needs no decryption, just the pkg and its
+  /// paired .rap sitting together. Best-effort and never fatal to the
+  /// download: if the setting is off, there's no RAP link for this title,
+  /// or the fetch fails, the pkg is simply left where it is.
+  Future<String> _maybeHandlePs3License(DownloadTask task, String pkgPath) async {
+    if (!getPs3DownloadRap() || !_isPs3Pkg(task)) return pkgPath;
+
+    try {
+      final entry = await _romDb.getEntry(task.slug);
+      final rapLink =
+          entry?.links.where((l) => l.type == 'RAP file').firstOrNull;
+      if (rapLink == null) return pkgPath;
+
+      final response = await _dio.get<List<int>>(
+        rapLink.url,
+        options: Options(responseType: ResponseType.bytes),
+      );
+      final rapBytes = response.data;
+      if (rapBytes == null || rapBytes.isEmpty) return pkgPath;
+
+      final platformDir = await _storage.getPlatformDirectory(task.platform);
+      final baseName = p.basenameWithoutExtension(pkgPath);
+      final gameDir = Directory(p.join(platformDir.path, baseName));
+      if (!await gameDir.exists()) await gameDir.create(recursive: true);
+      final movedPkgPath = p.join(gameDir.path, p.basename(pkgPath));
+      await File(pkgPath).rename(movedPkgPath);
+      await File(p.join(gameDir.path, rapLink.filename)).writeAsBytes(rapBytes);
+      return gameDir.path;
+    } catch (_) {
+      // Best-effort — the raw pkg is still a usable download on its own.
+      return pkgPath;
     }
   }
 
@@ -1871,6 +1942,29 @@ class DownloadService {
     _activeTasks[task.id] = updatedTask;
     await _db.updateDownload(updatedTask);
     _downloadController.add(updatedTask);
+  }
+
+  /// After a 3DS archive extracts, decrypt the resulting `.3ds` in place if
+  /// a boot9 keys file is configured (picked in Settings, or `boot9.bin` in
+  /// the BIOS folder's 3DS place), so emulators like Azahar (which
+  /// refuse to decrypt at load time) can use it directly. A seeddb.bin
+  /// (also user-supplied) is passed along if configured, needed only for
+  /// the subset of titles using seed crypto. Best-effort and never fatal to
+  /// the download: an unset/wrong boot9, a missing/mismatched seed, or any
+  /// other decrypt failure just leaves the extracted file encrypted, which
+  /// is still a usable (if Azahar-incompatible) file.
+  Future<void> _maybeDecrypt3ds(String path, String platform) async {
+    if (platform != '3ds' && platform != 'n3ds') return;
+    final boot9Path =
+        getThreeDsBoot9Path() ?? await findThreeDsSystemFile('boot9.bin');
+    if (boot9Path == null) return;
+    final seeddbPath =
+        getThreeDsSeeddbPath() ?? await findThreeDsSystemFile('seeddb.bin');
+    try {
+      await _ncchDecrypt.decryptCci(path, boot9Path, seeddbPath);
+    } catch (_) {
+      // Best-effort — see doc comment above.
+    }
   }
 
   /// The on-disk filename to save a task under: the game's title (from the

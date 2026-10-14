@@ -108,7 +108,7 @@ if build:
     if not build.isdigit():
         sys.exit(f"DROIDTOP_PLUGIN_BUILD must be a CI run number, got {build!r}")
     manifest["version"] = f'{manifest["version"]}-{build}'
-manifest["label"] = f"romgi ({line})"
+manifest["label"] = "romgi-bio" if line == "main" else f"romgi-bio ({line})"
 manifest["runtimeVersion"] = runtime_version
 manifest["payload"] = payload
 json.dump(manifest, open("droidtop_plugin/build/manifest.json", "w"), indent=2, sort_keys=True)

@@ -10,7 +10,9 @@ is a fork branch with plugin-core merged in).
 ## What the plugin gives droidtop
 
 A `flutter_embed` plugin, plugin API contract 2 (droidtop `docs/plugin-api.md`
-1.6 and 1.7), id `bi0shacker001.romgi-<line>`.
+1.6 and 1.7), id `bi0shacker001.romgi-<line>`. The app is romgi-bio (bi0shacker001/romgi); the
+plugin's label is `romgi-bio` for `plugin/main`, the line that carries every
+feature of the app as an option, and `romgi-bio (<line>)` for any other line.
 
 | Extension point | What it does |
 | --- | --- |

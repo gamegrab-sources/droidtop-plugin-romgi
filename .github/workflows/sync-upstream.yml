@@ -33,10 +33,14 @@ jobs:
       - name: Fetch upstream
         run: git fetch upstream main
 
-      - name: Fast-forward upstream-main
+      # upstream-main copies the fork's main. It is normally a fast-forward;
+      # when commits made here got onto it (this repo's CI used to commit
+      # revision bumps to it, which broke the sync from 2026-10-02), the
+      # fork's side wins every conflict, by merge (no history rewrite).
+      - name: Update upstream-main
         run: |
           git checkout upstream-main
-          git merge --ff-only upstream/main
+          git merge --ff-only upstream/main ||             git merge --no-edit -X theirs -m "Merge fork main into upstream-main" upstream/main
           git push origin upstream-main
 
       - name: Try merging into main

@@ -9,7 +9,7 @@
 //
 // The plugin id, and so the channel name FlutterDroidtopPlugin derives as
 // "dev.droidtop.pluginhost/<pluginId>", differs per line
-// (romgi.romgi-main, ...). It is not hardcoded: droidtop_plugin/
+// (gamegrab.romgi.main, ...). It is not hardcoded: droidtop_plugin/
 // build.sh passes it as --dart-define, so this one file is identical on
 // every plugin/<line> branch.
 //
@@ -34,7 +34,7 @@ import 'services/rom_database_service.dart';
 
 const String _pluginId = String.fromEnvironment(
   'DROIDTOP_PLUGIN_ID',
-  defaultValue: 'romgi.romgi-dev',
+  defaultValue: 'gamegrab.romgi.dev',
 );
 final MethodChannel _channel = MethodChannel(
   'dev.droidtop.pluginhost/$_pluginId',

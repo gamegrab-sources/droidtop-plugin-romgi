@@ -41,10 +41,10 @@ if [ "$LINE" = "$BRANCH" ] || [ -z "$LINE" ]; then
   # actual installable line's bundle.
   LINE="dev"
 fi
-# The manifest's origin is "romgi" -- its leaf certificate is issued by Droidtop
-# Core for that origin -- and PluginBundleInstaller requires an id namespaced as
+# The manifest's origin is "gamegrab" -- its leaf certificate is issued by the
+# gamegrab root for that origin -- and PluginBundleInstaller requires an id namespaced as
 # "<origin>.<name>".
-PLUGIN_ID="romgi.romgi-${LINE}"
+PLUGIN_ID="gamegrab.romgi.${LINE}"
 
 echo "Building line '$LINE' as plugin id '$PLUGIN_ID'"
 

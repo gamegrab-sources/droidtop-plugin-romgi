@@ -3,8 +3,8 @@
 # manifest.json + payload/{lib,dex,flutter_assets}) into
 # <plugin id>.droidplugin.tar.xz.
 #
-# The origin is "romgi": this repository's key has a leaf certificate issued by
-# Droidtop Core (droidtop-plugin-key.json carries the same leaf). The bundle
+# The origin is "gamegrab": this repository's key has a leaf certificate issued by
+# the gamegrab root (droidtop-plugin-key.json carries the root certificate). The bundle
 # carries manifest.jws, a detached ES256 JWS over the exact manifest.json bytes
 # with that leaf in x5c (droidtop docs/SPEC.md 12a). CI writes the secrets
 # PLUGIN_SIGNING_KEY and PLUGIN_SIGNING_CERT to private temporary files and
@@ -15,7 +15,7 @@ JWS_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$(dirname "$0")/.."
 
 : "${PLUGIN_SIGNING_KEY:?set to the path of this repository's private key (PEM)}"
-: "${PLUGIN_SIGNING_CERT:?set to the path of this key's leaf certificate (PEM) issued by Droidtop Core}"
+: "${PLUGIN_SIGNING_CERT:?set to the path of this key's leaf certificate (PEM) issued by the gamegrab root}"
 : "${BUNDLE_DIR:=droidtop_plugin/build}"
 
 test -f "$BUNDLE_DIR/manifest.json" || { echo "missing $BUNDLE_DIR/manifest.json -- run droidtop_plugin/build.sh first" >&2; exit 1; }

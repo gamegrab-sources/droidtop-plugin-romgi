@@ -71,12 +71,11 @@ jobs:
     # those belong to main/upstream-<line>, which don't carry this job
     # at all (droidtop_plugin/build.sh only exists here).
     #
-    # This plugin is private and not part of the official droidtop trust
-    # ring: it signs with its own independent P-256 key ("bi0shacker001"
-    # origin), held only as this repo's PRIVATE_PLUGIN_SIGNING_KEY
-    # secret -- never derived from and never mixed with droidtop's own
-    # master/root key. CI signs the bundle itself and publishes only the
-    # signed .droidplugin.tar.xz; there is no unsigned release asset.
+    # The origin is "romgi", unofficial: this repository's PLUGIN_SIGNING_KEY
+    # has a PLUGIN_SIGNING_CERT leaf issued by Droidtop Core. CI signs the
+    # bundle itself (manifest.jws) and publishes only the signed
+    # .droidplugin.tar.xz plus droidtop-plugin-key.json; there is no
+    # unsigned release asset.
     name: droidtop plugin bundle (signed)
     runs-on: ubuntu-latest
     permissions:
@@ -115,13 +114,17 @@ jobs:
       - name: Sign the plugin bundle
         if: steps.has_wrapper.outputs.present == 'true' && github.event_name == 'push'
         env:
-          KEY_PEM: ${{ secrets.PRIVATE_PLUGIN_SIGNING_KEY }}
+          KEY_PEM: ${{ secrets.PLUGIN_SIGNING_KEY }}
+          CERT_PEM: ${{ secrets.PLUGIN_SIGNING_CERT }}
         run: |
-          KEYFILE="$RUNNER_TEMP/private-plugin-signing-key.pem"
+          test -n "$KEY_PEM" && test -n "$CERT_PEM" || { echo "::error::PLUGIN_SIGNING_KEY and PLUGIN_SIGNING_CERT must both be set"; exit 1; }
+          umask 077
+          KEYFILE="$RUNNER_TEMP/plugin-signing-key.pem"
+          CERTFILE="$RUNNER_TEMP/plugin-signing-cert.pem"
           printf '%s' "$KEY_PEM" > "$KEYFILE"
-          chmod 600 "$KEYFILE"
-          PRIVATE_PLUGIN_SIGNING_KEY="$KEYFILE" ./droidtop_plugin/sign.sh
-          rm -f "$KEYFILE"
+          printf '%s' "$CERT_PEM" > "$CERTFILE"
+          PLUGIN_SIGNING_KEY="$KEYFILE" PLUGIN_SIGNING_CERT="$CERTFILE" ./droidtop_plugin/sign.sh
+          rm -f -- "$KEYFILE" "$CERTFILE"
 
       # One rolling release per branch (tag build-<branch>), same scheme
       # main/upstream-<line> use for their APK builds -- replaces the
@@ -142,4 +145,4 @@ jobs:
           gh release create "$tag" "$BUNDLE" droidtop-plugin-key.json \
             --repo "${{ github.repository }}" \
             --title "romgi-bio (${{ github.ref_name }}) — latest plugin bundle" \
-            --notes "Automated build from ${{ github.sha }}. Signed droidtop plugin bundle, private (independent \`bi0shacker001\` origin key -- see droidtop_plugin/README.md, not the official droidtop trust ring). Replaced on every push to \`${{ github.ref_name }}\`."
+            --notes "Automated build from ${{ github.sha }}. Signed droidtop plugin bundle, origin \`romgi\` (unofficial, see droidtop_plugin/README.md). Replaced on every push to \`${{ github.ref_name }}\`."

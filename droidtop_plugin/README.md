@@ -10,7 +10,7 @@ is a fork branch with plugin-core merged in).
 ## What the plugin gives droidtop
 
 A `flutter_embed` plugin, plugin API contract 2 (droidtop `docs/plugin-api.md`
-1.6 and 1.7), id `bi0shacker001.romgi-<line>`. The app is romgi-bio (bi0shacker001/romgi); the
+1.6 and 1.7), id `romgi.romgi-<line>`. The app is romgi-bio (bi0shacker001/romgi); the
 plugin's label is `romgi-bio` for `plugin/main`, the line that carries every
 feature of the app as an option, and `romgi-bio (<line>)` for any other line.
 
@@ -99,14 +99,14 @@ categories when that lands.
 - `build.sh` -- builds THIS branch's bundle (unsigned) from romgi's own
   `pubspec.yaml` and `android/` project, pointed at
   `lib/droidtop_plugin_main.dart` with `--target`. The plugin id comes from the
-  branch (`plugin/<line>` -> `bi0shacker001.romgi-<line>`). The payload is
+  branch (`plugin/<line>` -> `romgi.romgi-<line>`). The payload is
   `lib/<abi>/libapp.so`, `dex/classes*.dex` and `flutter_assets/`.
   **`dex/` matters**: romgi's Flutter plugin packages (sqflite, path_provider,
   shared_preferences) keep their Android half there with the generated
   `GeneratedPluginRegistrant`, which droidtop's engine host loads and calls.
   Without it the game index cannot open and every search fails.
 - `sign.sh` -- signs `build.sh`'s output with the repo's own key (origin
-  `bi0shacker001`, independent of droidtop's official trust ring) and packs
+  `romgi`, its leaf certificate issued by Droidtop Core) and packs
   `<id>.droidplugin.tar.xz` (`lib`, `dex`, `flutter_assets`).
 - `manifest.template.json` -- the shared manifest shape; `build.sh` fills in
   `id`, `label`, `runtimeVersion` and `payload`, and in CI stamps the
@@ -121,7 +121,7 @@ makes droidtop refuse the bundle at load.
 ## Building and installing
 
 CI builds and signs it: every push runs `droidtop-plugin-bundle`, which signs
-with the repository secret `PRIVATE_PLUGIN_SIGNING_KEY` and publishes the
+with the repository secrets `PLUGIN_SIGNING_KEY` and `PLUGIN_SIGNING_CERT` and publishes the
 rolling release `build-<branch>` carrying `<id>.droidplugin.tar.xz` and
 `droidtop-plugin-key.json`. In droidtop: Settings, Plugins, Keys you trust, add
 this repository (private repositories need the GitHub token set in Accounts and

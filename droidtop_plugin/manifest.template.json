@@ -1,5 +1,5 @@
 {
-  "origin": "bi0shacker001",
+  "origin": "romgi",
   "description": "romgi-bio (github.com/bi0shacker001/romgi) as a droidtop flutter_embed plugin -- search the game index and download into droidtop's own library folders; romgi-bio's own screen adds BIOS and system files, PS3 licences and optional live Prowlarr and Macintosh Garden search. Unofficial (gamegrab-sources).",
   "version": "1.2.0",
   "kind": "flutter_embed",

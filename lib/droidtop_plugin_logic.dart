@@ -100,7 +100,7 @@ Map<String, dynamic> view(
 
 /// `ui.settings` `view`: the index status and the one action the plugin needs.
 Map<String, dynamic> settingsView({required bool indexReady, int? entries}) =>
-    view('romgi', [
+    view('romgi-bio', [
       {
         'type': 'info',
         'id': 'index',

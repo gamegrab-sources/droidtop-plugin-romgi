@@ -1,0 +1,8 @@
+droidtop-plugin-romgi, plugin-core
+The Droidtop plugin wrapper (droidtop_plugin/ and the plugin workflow): Copyright the droidtop contributors, GNU
+General Public License, version 3 (LICENSE).
+
+This branch also carries the romgi app, https://github.com/caprado/romgi, Copyright (c) 2025 Christian Prado, under the
+MIT License. MIT allows distributing the combined work under GPL-3.0, so the combined work is GPL-3.0 (owner rule,
+2026-10-14: a codebase that can be GPL-3.0 must be). The MIT text and copyright notice are kept unchanged in
+LICENSE.MIT, as MIT requires.

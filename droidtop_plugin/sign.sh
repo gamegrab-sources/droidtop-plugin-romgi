@@ -3,19 +3,19 @@
 # manifest.json + payload/{lib,dex,flutter_assets}) into
 # <plugin id>.droidplugin.tar.xz.
 #
-# This plugin is private and not part of the official droidtop trust
-# ring: it signs with its own independent P-256 key (origin
-# "bi0shacker001"), generated separately and never derived from
-# droidtop's master/root key. The key lives as this repo's own
-# PRIVATE_PLUGIN_SIGNING_KEY GitHub Actions secret, and CI signs the
-# bundle itself (writes the value to a temp PEM file for the duration
-# of the job). It can also be run locally with PRIVATE_PLUGIN_SIGNING_KEY
-# pointed at a PEM file path on disk.
+# The origin is "gamegrab": this repository's key has a leaf certificate issued by
+# the gamegrab root (droidtop-plugin-key.json carries the root certificate). The bundle
+# carries manifest.jws, a detached ES256 JWS over the exact manifest.json bytes
+# with that leaf in x5c (droidtop docs/SPEC.md 12a). CI writes the secrets
+# PLUGIN_SIGNING_KEY and PLUGIN_SIGNING_CERT to private temporary files and
+# passes their paths here.
 
 set -euo pipefail
+JWS_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$(dirname "$0")/.."
 
-: "${PRIVATE_PLUGIN_SIGNING_KEY:?set to a PEM file path for this repo own independent private key}"
+: "${PLUGIN_SIGNING_KEY:?set to the path of this repository's private key (PEM)}"
+: "${PLUGIN_SIGNING_CERT:?set to the path of this key's leaf certificate (PEM) issued by the gamegrab root}"
 : "${BUNDLE_DIR:=droidtop_plugin/build}"
 
 test -f "$BUNDLE_DIR/manifest.json" || { echo "missing $BUNDLE_DIR/manifest.json -- run droidtop_plugin/build.sh first" >&2; exit 1; }
@@ -25,7 +25,8 @@ test -d "$BUNDLE_DIR/payload/flutter_assets" || { echo "missing $BUNDLE_DIR/payl
 
 PLUGIN_ID="$(python3 -c "import json; print(json.load(open('$BUNDLE_DIR/manifest.json'))['id'])")"
 
-openssl dgst -sha256 -sign "$PRIVATE_PLUGIN_SIGNING_KEY" "$BUNDLE_DIR/manifest.json" | base64 -w0 > "$BUNDLE_DIR/manifest.sig"
+python3 -c 'import cryptography' 2>/dev/null || python3 -m pip install --quiet --user --break-system-packages 'cryptography>=42'
+python3 "$JWS_DIR/sign_jws.py" droidtop-plugin+jws "$BUNDLE_DIR/manifest.json" "$PLUGIN_SIGNING_KEY" "$PLUGIN_SIGNING_CERT" > "$BUNDLE_DIR/manifest.jws"
 
 # GNU tar's repeated -C is CUMULATIVE (relative to wherever the previous
 # -C left it, not this script's own cwd) -- absolute paths sidestep it,
@@ -33,7 +34,7 @@ openssl dgst -sha256 -sign "$PRIVATE_PLUGIN_SIGNING_KEY" "$BUNDLE_DIR/manifest.j
 BUNDLE_ABS="$(cd "$BUNDLE_DIR" && pwd)"
 OUT="${PLUGIN_ID}.droidplugin.tar.xz"
 tar --sort=name -cf - \
-  -C "$BUNDLE_ABS" manifest.json manifest.sig \
+  -C "$BUNDLE_ABS" manifest.json manifest.jws \
   -C "$BUNDLE_ABS/payload" lib dex flutter_assets \
   | xz -9e > "$OUT"
 

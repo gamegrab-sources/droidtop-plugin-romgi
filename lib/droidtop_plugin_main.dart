@@ -9,7 +9,7 @@
 //
 // The plugin id, and so the channel name FlutterDroidtopPlugin derives as
 // "dev.droidtop.pluginhost/<pluginId>", differs per line
-// (bi0shacker001.romgi-main, ...). It is not hardcoded: droidtop_plugin/
+// (gamegrab.romgi.main, ...). It is not hardcoded: droidtop_plugin/
 // build.sh passes it as --dart-define, so this one file is identical on
 // every plugin/<line> branch.
 //
@@ -34,7 +34,7 @@ import 'services/rom_database_service.dart';
 
 const String _pluginId = String.fromEnvironment(
   'DROIDTOP_PLUGIN_ID',
-  defaultValue: 'bi0shacker001.romgi-dev',
+  defaultValue: 'gamegrab.romgi.dev',
 );
 final MethodChannel _channel = MethodChannel(
   'dev.droidtop.pluginhost/$_pluginId',
@@ -101,7 +101,7 @@ Future<String> _handle(MethodCall call) async {
     }
     return v2Error('UNSUPPORTED', 'Unsupported extension point or operation');
   } catch (_) {
-    return v2Error('FAILED', 'romgi could not complete the request');
+    return v2Error('FAILED', 'romgi-bio could not complete the request');
   }
 }
 
@@ -203,7 +203,7 @@ Future<void> _runJob(String jobId, Map<String, dynamic> envelope) async {
     }
     return await _complete(jobId, ok: false, error: 'Unsupported job operation');
   } catch (_) {
-    return _complete(jobId, ok: false, error: 'romgi could not complete the job');
+    return _complete(jobId, ok: false, error: 'romgi-bio could not complete the job');
   } finally {
     _running.remove(jobId);
   }

@@ -163,6 +163,7 @@ romgi is a tool for downloading content; it does not host any ROMs or copyrighte
 - **Framework**: [Flutter](https://flutter.dev/)
 - **Vendored Code**: [pkg2zip](https://github.com/mmozeiko/pkg2zip) by mmozeiko (public domain / Unlicense) — vendored at `android/app/src/main/cpp/pkg2zip/` (one small local patch on top, see the comment in `CMakeLists.txt`) to decrypt PS Vita `.pkg` downloads into an install-ready zip
 
-## License
+## Licence
 
-This project is open source. See the [LICENSE](LICENSE) file for details.
+GPL-3.0, see [LICENSE](LICENSE) and [NOTICE](NOTICE). The upstream romgi app by Christian Prado is MIT; its notice is kept in [LICENSE.MIT](LICENSE.MIT).
+

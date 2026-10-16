@@ -146,3 +146,22 @@ jobs:
             --repo "${{ github.repository }}" \
             --title "romgi-bio (${{ github.ref_name }}) — latest plugin bundle" \
             --notes "Automated build from ${{ github.sha }}. Signed droidtop plugin bundle, origin \`gamegrab\` (unofficial, see droidtop_plugin/README.md). Replaced on every push to \`${{ github.ref_name }}\`."
+
+      - name: Ask the gamegrab-sources catalog to reindex
+        # droidtop reads gamegrab-sources/catalog's index.json, so a release is offered only once that index lists
+        # it. The catalog rebuilds on a plugin-published dispatch (docs/CATALOG-FORMAT.md there); a dispatch to
+        # another repository needs a token of its own, as this job's GITHUB_TOKEN cannot reach it. Without the
+        # CATALOG_DISPATCH_TOKEN secret this is a no-op and the catalog's scheduled run lists the release within hours.
+        if: steps.has_wrapper.outputs.present == 'true' && github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.CATALOG_DISPATCH_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "No CATALOG_DISPATCH_TOKEN; the catalog lists this release on its schedule."
+            exit 0
+          fi
+          gh api repos/gamegrab-sources/catalog/dispatches \
+            -f event_type=plugin-published \
+            -f "client_payload[repo]=$GH_REPO"

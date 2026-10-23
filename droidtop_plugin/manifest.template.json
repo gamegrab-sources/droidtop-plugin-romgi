@@ -41,7 +41,7 @@
       "reason": "Games you choose to download are placed in the matching game folder"
     }
   ],
-  "contractVersion": 2,
+  "contractVersion": 3,
   "category": "sources",
   "requestsRoot": false,
   "abis": [

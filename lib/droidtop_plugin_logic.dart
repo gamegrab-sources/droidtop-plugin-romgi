@@ -98,28 +98,88 @@ Map<String, dynamic> view(
       ],
     };
 
-/// `ui.settings` `view`: the index status and the one action the plugin needs.
-Map<String, dynamic> settingsView({required bool indexReady, int? entries}) =>
-    view('romgi-bio', [
+/// The targets romgi's facets go to (droidtop docs/plugin-api.md 1.10): the
+/// Quick Menu's plugin section and the plugin's settings page.
+const String quickMenuTarget = 'quickmenu';
+const String settingsTarget = 'settings.page';
+
+/// How long ago [then] was, in a few plain words.
+String ago(DateTime then, DateTime now) {
+  final d = now.difference(then);
+  if (d.inMinutes < 2) return 'just now';
+  if (d.inHours < 1) return '${d.inMinutes} minutes ago';
+  if (d.inHours < 2) return 'an hour ago';
+  if (d.inDays < 1) return '${d.inHours} hours ago';
+  if (d.inDays < 2) return 'yesterday';
+  return '${d.inDays} days ago';
+}
+
+String _count(int n) {
+  final digits = n.toString();
+  final out = StringBuffer();
+  for (var i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 == 0) out.write(',');
+    out.write(digits[i]);
+  }
+  return out.toString();
+}
+
+/// romgi's facets for [target] (`ui.facets` `get`, droidtop docs/plugin-api.md
+/// 1.10): the game index's state, the job that downloads or updates it, and,
+/// on the settings page, deleting it. droidtop draws them; Open romgi-bio is
+/// droidtop's own row on every page of a plugin with its own screen.
+/// [entries] and [generatedAt] are the local index's, when it is there.
+Map<String, dynamic> indexFacets({
+  required String target,
+  required bool indexReady,
+  int? entries,
+  DateTime? generatedAt,
+  int? sizeBytes,
+  required DateTime now,
+}) {
+  final parts = <String>[
+    if (entries != null) '${_count(entries)} games',
+    if (generatedAt != null) 'updated ${ago(generatedAt, now)}',
+  ];
+  return {
+    'facets': [
       {
-        'type': 'info',
         'id': 'index',
-        'title': 'Game index',
+        'kind': 'status',
+        'v': 1,
+        'targets': [quickMenuTarget, settingsTarget],
+        'label': 'Game index',
+        'state': indexReady ? 'ok' : 'off',
+        'tone': indexReady ? 'positive' : 'caution',
         'value': indexReady
-            ? 'Downloaded${entries == null ? '' : ' · $entries games'}'
-            : 'Not downloaded',
+            ? (parts.isEmpty ? 'Downloaded' : parts.join(' · '))
+            : 'Not downloaded. Search needs it',
       },
       {
-        'type': 'button',
         'id': 'download-index',
-        'title': indexReady ? 'Update the game index' : 'Download the game index',
-        'action': {
-          'kind': 'job',
-          'op': 'downloadIndex',
-          'title': 'Download game index',
-        },
+        'kind': 'action',
+        'v': 1,
+        'targets': [quickMenuTarget, settingsTarget],
+        'label': indexReady ? 'Update the game index' : 'Download the game index',
+        'sub': indexReady ? 'Fetches the newest list of games' : 'Needed before you can search',
+        'call': {'op': 'downloadIndex', 'kind': 'job'},
       },
-    ]);
+      if (indexReady)
+        {
+          'id': 'delete-index',
+          'kind': 'action',
+          'v': 1,
+          'targets': [settingsTarget],
+          'label': 'Delete the game index',
+          'sub': sizeBytes == null
+              ? 'Search needs it downloaded again'
+              : 'Frees ${(sizeBytes / (1024 * 1024)).round()} MB. Search needs it downloaded again',
+          'confirm': 'danger',
+          'call': {'op': 'deleteIndex'},
+        },
+    ].where((f) => (f['targets'] as List).contains(target)).toList(),
+  };
+}
 
 /// `library.sources` `form`: the search field plus the platform and region
 /// filters. [systemId] is droidtop's system id for the screen that opened the

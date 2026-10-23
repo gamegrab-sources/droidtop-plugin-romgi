@@ -19,7 +19,10 @@
 //                    downloads the single file itself (DownloadManager,
 //                    droidtop's Downloads list) and places it in the system's
 //                    folder. The plugin never writes a game file.
-//   ui.settings      index status plus a job that downloads the index.
+//   ui.facets        the game index's state and the job that downloads it, in
+//                    the Quick Menu and on the settings page, and deleting the
+//                    index on the settings page (docs/plugin-api.md 1.10).
+//                    droidtop draws them; Open romgi-bio is droidtop's own row.
 //   ui.main          romgi's own app, on a second engine.
 import 'dart:async';
 import 'dart:convert';
@@ -86,7 +89,16 @@ Future<String> _handle(MethodCall call) async {
     final point = envelope['point'] as String?;
     final op = envelope['op'] as String?;
     final args = _map(envelope['args']);
-    if (point == 'ui.settings' && op == 'view') return await _settings();
+    if (point == 'ui.facets') {
+      switch (op) {
+        case 'get':
+          return await _facets(args['target'] as String? ?? '');
+        case 'deleteIndex':
+          await RomDatabaseService().deleteDatabase();
+          // droidtop asks for the target's facets again after a call.
+          return v2Data({'message': 'Game index deleted'});
+      }
+    }
     if (point == 'library.sources') {
       switch (op) {
         case 'form':
@@ -105,11 +117,19 @@ Future<String> _handle(MethodCall call) async {
   }
 }
 
-Future<String> _settings() async {
+/// The facets of [target].
+Future<String> _facets(String target) async {
   final db = RomDatabaseService();
   final ready = await db.isDatabaseReady();
   final version = ready ? await db.getLocalVersion() : null;
-  return v2Data(settingsView(indexReady: ready, entries: version?.entries));
+  return v2Data(indexFacets(
+    target: target,
+    indexReady: ready,
+    entries: version?.entries,
+    generatedAt: version?.generatedAt,
+    sizeBytes: version?.uncompressedSize,
+    now: DateTime.now(),
+  ));
 }
 
 String _systemId(Map<String, dynamic> args) =>
@@ -128,7 +148,7 @@ Future<String> _form(Map<String, dynamic> args) async {
 }
 
 const String _indexMissing =
-    'The game index is not downloaded yet. Open this plugin’s Settings page to download it.';
+    'The game index is not downloaded yet. Download it from romgi-bio in the Quick Menu or on its Settings page.';
 
 Future<String> _search(Map<String, dynamic> args) async {
   final db = RomDatabaseService();
@@ -195,7 +215,7 @@ Future<void> _runJob(String jobId, Map<String, dynamic> envelope) async {
     final point = envelope['point'] as String?;
     final op = envelope['op'] as String?;
     final args = _map(envelope['args']);
-    if (point == 'ui.settings' && op == 'downloadIndex') {
+    if (point == 'ui.facets' && op == 'downloadIndex') {
       return await _downloadIndex(jobId);
     }
     if (point == 'library.sources' && op == 'acquire') {

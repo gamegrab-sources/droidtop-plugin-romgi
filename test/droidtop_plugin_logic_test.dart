@@ -170,13 +170,42 @@ void main() {
       expect(items.any((i) => i['id'] == 'none'), isTrue);
     });
 
-    test('the settings view offers the index download whatever its state', () {
+    test('the index facets say its state and offer its download, on both targets', () {
+      final now = DateTime(2026, 10, 23, 12);
       for (final ready in [true, false]) {
-        final view = settingsView(indexReady: ready, entries: ready ? 12 : null);
-        final items = ((view['sections'] as List).first['items'] as List).cast<Map<String, dynamic>>();
-        expect(items.firstWhere((i) => i['id'] == 'index')['value'], ready ? 'Downloaded · 12 games' : 'Not downloaded');
-        expect(items.firstWhere((i) => i['id'] == 'download-index')['action']['op'], 'downloadIndex');
+        for (final target in [quickMenuTarget, settingsTarget]) {
+          final facets = (indexFacets(
+            target: target,
+            indexReady: ready,
+            entries: ready ? 241118 : null,
+            generatedAt: ready ? DateTime(2026, 10, 20, 12) : null,
+            sizeBytes: ready ? 300 * 1024 * 1024 : null,
+            now: now,
+          )['facets'] as List).cast<Map<String, dynamic>>();
+          final index = facets.firstWhere((f) => f['id'] == 'index');
+          expect(index['kind'], 'status');
+          expect(index['state'], ready ? 'ok' : 'off');
+          expect(index['value'], ready ? '241,118 games · updated 3 days ago' : 'Not downloaded. Search needs it');
+          final download = facets.firstWhere((f) => f['id'] == 'download-index');
+          expect(download['call'], {'op': 'downloadIndex', 'kind': 'job'});
+          expect(facets.every((f) => (f['targets'] as List).contains(target)), isTrue);
+          // Deleting the index is only on the settings page, only when there is one, and asks first.
+          final delete = facets.where((f) => f['id'] == 'delete-index');
+          expect(delete.isNotEmpty, ready && target == settingsTarget);
+          if (delete.isNotEmpty) {
+            expect(delete.first['confirm'], 'danger');
+            expect(delete.first['sub'], 'Frees 300 MB. Search needs it downloaded again');
+          }
+        }
       }
+    });
+
+    test('ages read in plain words', () {
+      final now = DateTime(2026, 10, 23, 12);
+      expect(ago(now.subtract(const Duration(seconds: 30)), now), 'just now');
+      expect(ago(now.subtract(const Duration(minutes: 20)), now), '20 minutes ago');
+      expect(ago(now.subtract(const Duration(hours: 5)), now), '5 hours ago');
+      expect(ago(now.subtract(const Duration(hours: 30)), now), 'yesterday');
     });
   });
 

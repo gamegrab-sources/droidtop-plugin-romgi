@@ -17,7 +17,7 @@ feature of the app as an option, and `romgi-bio (<line>)` for any other line.
 | Extension point | What it does |
 | --- | --- |
 | `library.sources` | The Get games flow. `form`: search field, platform and region pickers (the platform is preselected to the system the person opened it from, when romgi's index has it). `search`: the local game index, up to 50 results. `detail`: the game's facts, a picker over its direct download sources, one **Download game** job. `acquire` (a job): hands droidtop a download descriptor (below). |
-| `ui.settings` | Index status and **Download the game index**, a job with live progress and cancel. |
+| `ui.facets` | Facets (droidtop docs/plugin-api.md 1.10), drawn by droidtop: the game index's state (games, how old) and **Download / Update the game index**, a job with live progress and cancel, in the Quick Menu (`quickmenu`) and on the settings page (`settings.page`); **Delete the game index** on the settings page, asked first. Open romgi-bio is droidtop's own row. |
 | `ui.main` | romgi's own app (`mainUi` -> `main.dart`'s `main`) on a second engine, for configuration and browsing. |
 
 ### Downloading: droidtop does the single files
